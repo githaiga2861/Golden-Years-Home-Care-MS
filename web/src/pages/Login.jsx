@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import logo from '../assets/logo.png'
 
 const Eye = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -36,7 +37,7 @@ export default function Login() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="brandline">
-          <div className="brand-mark">GY</div>
+          <img className="brand-mark" src={logo} alt="Golden Years" />
           <div>Golden Years<br /><span style={{ fontWeight: 500, fontSize: '.72rem', color: 'var(--muted)' }}>HOME CARE MANAGEMENT SYSTEM</span></div>
         </div>
         {!isConfigured && (

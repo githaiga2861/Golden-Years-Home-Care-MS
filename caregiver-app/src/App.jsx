@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate, Outlet } from 'react-r
 import { useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { startSyncLoop, pendingCount } from './lib/offline'
+import logo from './assets/logo.png'
 import Login from './pages/Login'
 import Today from './pages/Today'
 import Week from './pages/Week'
@@ -25,7 +26,7 @@ function Frame() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand-mark">GY</div>
+        <img className="brand-mark" src={logo} alt="Golden Years" />
         <b>Golden Years Care</b>
         {!online && <span className="offline-pill">Offline — saving on phone</span>}
         {online && pending > 0 && <span className="sync-pill">Syncing {pending}…</span>}

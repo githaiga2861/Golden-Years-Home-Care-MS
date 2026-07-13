@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import logo from '../assets/logo.png'
 
 const NAV = [
   ['/app', 'Dashboard', '⌂', true],
@@ -34,7 +35,7 @@ export default function Shell() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">GY</div>
+          <img className="brand-mark" src={logo} alt="Golden Years" />
           <div>Golden Years<br /><span style={{ fontWeight: 500, fontSize: '.72rem', opacity: .8 }}>Home Care Management</span></div>
         </div>
         <nav>

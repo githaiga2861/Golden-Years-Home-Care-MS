@@ -23,7 +23,8 @@ button { font-family: var(--font-body); }
   padding: .85rem 1rem calc(.85rem); display: flex; align-items: center; gap: .6rem;
   padding-top: calc(.85rem + env(safe-area-inset-top));
 }
-.brand-mark { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e8c95c, var(--gold)); display: grid; place-items: center; color: var(--blue-ink); font-weight: 800; font-size: .82rem; flex-shrink: 0; }
+.brand-mark { width: 30px; height: 30px; border-radius: 50%; background: #ffffff; padding: 4px; box-sizing: border-box; display: grid; place-items: center; box-shadow: 0 0 0 1px rgba(10,37,64,.08); flex-shrink: 0; }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .topbar b { font-family: var(--font-display); }
 .offline-pill { margin-left: auto; background: var(--warn); color: #fff; border-radius: 99px; padding: .18rem .6rem; font-size: .72rem; font-weight: 700; }
 .sync-pill { margin-left: auto; background: var(--gold); color: var(--blue-ink); border-radius: 99px; padding: .18rem .6rem; font-size: .72rem; font-weight: 700; }

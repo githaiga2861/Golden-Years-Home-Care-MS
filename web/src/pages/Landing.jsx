@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import logo from '../assets/logo.png'
 
 /**
  * Public homepage ("hero"). Two doors:
@@ -11,7 +12,7 @@ export default function Landing() {
     <div className="landing">
       <header className="land-top">
         <div className="brandline">
-          <div className="brand-mark">GY</div>
+          <img className="brand-mark" src={logo} alt="Golden Years" />
           <div>Golden Years<small>HOME CARE MANAGEMENT SYSTEM</small></div>
         </div>
         <Link to="/login" className="btn btn-primary">Sign in</Link>
