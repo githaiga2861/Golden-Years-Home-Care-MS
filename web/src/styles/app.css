@@ -87,12 +87,7 @@ button { font-family: var(--font-body); }
   color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; line-height: 1.15;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
-.brand-mark {
-  width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
-  background: #ffffff; padding: 5px; box-sizing: border-box;
-  display: grid; place-items: center; box-shadow: 0 0 0 1px rgba(10,37,64,.08);
-}
-.brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.brand-mark { flex-shrink: 0; display: block; height: 52px; width: auto; }
 .sidebar nav { flex: 1; padding: .7rem .55rem; overflow-y: auto; }
 .nav-item {
   display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; margin: .12rem 0;
