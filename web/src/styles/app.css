@@ -87,7 +87,7 @@ button { font-family: var(--font-body); }
   color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; line-height: 1.15;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
-.brand-mark { flex-shrink: 0; display: block; height: 52px; width: auto; }
+.brand-mark { flex-shrink: 0; display: block; height: 60px; width: auto; }
 .sidebar nav { flex: 1; padding: .7rem .55rem; overflow-y: auto; }
 .nav-item {
   display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; margin: .12rem 0;
@@ -192,7 +192,8 @@ table.data tr.click:hover { background: var(--blue-soft); }
 
 /* ---------- landing page ---------- */
 .landing { background: #fff; min-height: 100vh; display: flex; flex-direction: column; }
-.land-top { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; max-width: 1120px; width: 100%; margin: 0 auto; }
+.land-top { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 3.5rem; max-width: 1440px; width: 100%; margin: 0 auto; }
+.land-top .brand-mark { height: 76px; }
 .land-top .brandline { display: flex; align-items: center; gap: .65rem; font-family: var(--font-display); font-weight: 700; color: var(--blue-ink); }
 .land-top .brandline small { display: block; font-family: var(--font-body); font-weight: 500; color: var(--muted); font-size: .72rem; letter-spacing: .04em; }
 .hero { max-width: 1120px; width: 100%; margin: 0 auto; padding: 4.2rem 2rem 3rem; display: grid; grid-template-columns: 1.15fr .85fr; gap: 3rem; align-items: center; }
