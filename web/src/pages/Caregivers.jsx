@@ -111,13 +111,14 @@ function CaregiverDetail({ caregiver, onClose }) {
   return (
     <Modal title={fullName(caregiver)} onClose={onClose} wide footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}>
       <div className="toolbar mb">
-        {['availability', 'account', 'details'].map((t) => (
+        {['availability', 'credentials', 'account', 'details'].map((t) => (
           <button key={t} className={`btn ${tab === t ? 'btn-primary' : 'btn-outline'}`} style={{ padding: '.4rem .9rem' }} onClick={() => setTab(t)}>
-            {{ availability: 'Availability', account: 'App account', details: 'Details' }[t]}
+            {{ availability: 'Availability', credentials: 'Credentials', account: 'App account', details: 'Details' }[t]}
           </button>
         ))}
       </div>
       {tab === 'availability' && <AvailabilityEditor caregiverId={caregiver.id} />}
+      {tab === 'credentials' && <CredentialsTab caregiverId={caregiver.id} />}
       {tab === 'account' && <AccountLink caregiver={caregiver} />}
       {tab === 'details' && (
         <>
@@ -132,6 +133,73 @@ function CaregiverDetail({ caregiver, onClose }) {
         </>
       )}
     </Modal>
+  )
+}
+
+function CredentialsTab({ caregiverId }) {
+  const [list, setList] = useState([])
+  const [f, setF] = useState({ credential_type: '', credential_number: '', issued_date: '', expiry_date: '', notes: '' })
+  const [err, setErr] = useState('')
+
+  const load = () => supabase.from('caregiver_credentials').select('*').eq('caregiver_id', caregiverId)
+    .order('expiry_date', { nullsFirst: false }).then(({ data }) => setList(data || []))
+  useEffect(() => { load() }, [caregiverId]) // eslint-disable-line
+
+  const add = async () => {
+    setErr('')
+    if (!f.credential_type.trim()) return setErr('Credential type is required.')
+    const row = { caregiver_id: caregiverId, ...f,
+      issued_date: f.issued_date || null, expiry_date: f.expiry_date || null }
+    const { error } = await supabase.from('caregiver_credentials').insert(row)
+    if (error) return setErr(error.message)
+    setF({ credential_type: '', credential_number: '', issued_date: '', expiry_date: '', notes: '' })
+    load()
+  }
+  const remove = async (id) => { await supabase.from('caregiver_credentials').delete().eq('id', id); load() }
+
+  const statusPill = (expiry) => {
+    if (!expiry) return null
+    const days = Math.floor((new Date(expiry) - new Date()) / 86400000)
+    if (days < 0) return <Pill kind="bad">Expired</Pill>
+    if (days <= 30) return <Pill kind="warn">Expires in {days}d</Pill>
+    return <Pill kind="ok">Valid</Pill>
+  }
+
+  return (
+    <>
+      {list.map((c) => (
+        <div key={c.id} className="card card-pad mb" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <b>{c.credential_type}</b>{c.credential_number && <span className="muted"> · #{c.credential_number}</span>}
+            <div className="muted" style={{ fontSize: '.85rem' }}>
+              {c.issued_date && `Issued ${c.issued_date}`}{c.expiry_date && ` · Expires ${c.expiry_date}`}
+              {!c.expiry_date && ' · No expiry'}
+            </div>
+            {c.notes && <div className="muted" style={{ fontSize: '.85rem' }}>{c.notes}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+            {statusPill(c.expiry_date)}
+            <button className="btn btn-quiet" onClick={() => remove(c.id)}>Remove</button>
+          </div>
+        </div>
+      ))}
+      {list.length === 0 && <p className="muted">No credentials recorded yet.</p>}
+      <h3 className="thread mt">Add a credential</h3>
+      {err && <p className="notice notice-bad">{err}</p>}
+      <div className="form-row">
+        <Field label="Type" help="e.g. CNA, HHA, CPR/First Aid, TB Test, Background Check">
+          <input value={f.credential_type} onChange={(e) => setF({ ...f, credential_type: e.target.value })} />
+        </Field>
+        <Field label="Credential / license number"><input value={f.credential_number} onChange={(e) => setF({ ...f, credential_number: e.target.value })} /></Field>
+      </div>
+      <div className="form-row">
+        <Field label="Issued date"><input type="date" value={f.issued_date} onChange={(e) => setF({ ...f, issued_date: e.target.value })} /></Field>
+        <Field label="Expiry date" help="Leave blank if it doesn't expire"><input type="date" value={f.expiry_date} onChange={(e) => setF({ ...f, expiry_date: e.target.value })} /></Field>
+      </div>
+      <Field label="Notes"><input value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+      <button className="btn btn-primary" onClick={add}>Add credential</button>
+      <p className="muted mt" style={{ fontSize: '.84rem' }}>Credentials expiring within 30 days automatically raise an alert for the office.</p>
+    </>
   )
 }
 
