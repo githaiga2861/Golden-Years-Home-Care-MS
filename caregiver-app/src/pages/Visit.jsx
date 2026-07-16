@@ -19,6 +19,10 @@ export default function Visit() {
 
   const [shift, setShift] = useState(null)
   const [client, setClient] = useState(null)
+  const [allergies, setAllergies] = useState([])
+  const [mobility, setMobility] = useState(null)
+  const [medications, setMedications] = useState([])
+  const [documents, setDocuments] = useState([])
   const [plan, setPlan] = useState(null)
   const [planTasks, setPlanTasks] = useState([])
   const [visit, setVisit] = useState(null)      // server visit row (null if offline-created)
@@ -42,9 +46,21 @@ export default function Visit() {
 
   const load = async () => {
     const { data: s } = await supabase.from('shifts')
-      .select('*, clients(*)').eq('id', shiftId).single()
+      .select('*, clients(*, mobility_levels(label))').eq('id', shiftId).single()
     if (!s) return
-    setShift(s); setClient(s.clients)
+    setShift(s); setClient(s.clients); setMobility(s.clients?.mobility_levels?.label || null)
+
+    const { data: al } = await supabase.from('client_allergies').select('allergies_list(label)').eq('client_id', s.client_id)
+    setAllergies((al || []).map((r) => r.allergies_list?.label).filter(Boolean))
+
+    const { data: meds } = await supabase.from('medications').select('*')
+      .eq('client_id', s.client_id).eq('is_active', true).order('created_at')
+    setMedications(meds || [])
+
+    const { data: docs } = await supabase.from('client_documents').select('*')
+      .eq('client_id', s.client_id).in('doc_type', ['physician_order', 'care_plan'])
+      .order('created_at', { ascending: false })
+    setDocuments(docs || [])
 
     const { data: cp } = await supabase.from('care_plans').select('*')
       .eq('client_id', s.client_id).eq('is_active', true).maybeSingle()
@@ -168,6 +184,11 @@ export default function Visit() {
     flash('warn', 'Note saved on this phone — it will upload automatically.')
   }
 
+  const openDocument = async (d) => {
+    const { data } = await supabase.storage.from('client-documents').createSignedUrl(d.storage_path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   if (!shift || !client) return <div className="empty"><p>Loading visit…</p></div>
 
   return (
@@ -181,6 +202,21 @@ export default function Visit() {
         </p>
         {shift.notes && <p className="notice notice-warn" style={{ marginTop: '.7rem' }}>Office note: {shift.notes}</p>}
       </div>
+
+      {(allergies.length > 0 || mobility) && (
+        <div className="card" style={{ borderLeft: '4px solid var(--bad)' }}>
+          <h3 style={{ marginBottom: '.5rem' }}>⚠ Safety information</h3>
+          {allergies.length > 0 && (
+            <p style={{ margin: '0 0 .4rem' }}>
+              <b>Allergies:</b>{' '}
+              {allergies.map((a) => <span key={a} className="pill pill-bad" style={{ marginRight: '.3rem' }}>{a}</span>)}
+            </p>
+          )}
+          {mobility && (
+            <p style={{ margin: 0 }}><b>Mobility level:</b> <span className="pill pill-warn">{mobility}</span></p>
+          )}
+        </div>
+      )}
 
       {msg && <p className={`notice notice-${msg.kind}`}>{msg.text}</p>}
 
@@ -209,6 +245,50 @@ export default function Visit() {
         <div className="card">
           <h3>Care plan</h3>
           <p className="muted" style={{ fontSize: '.9rem' }}>{plan.summary || 'No summary provided.'}</p>
+          {plan.goals && (
+            <>
+              <b style={{ fontSize: '.86rem' }}>Goals</b>
+              <p className="muted" style={{ fontSize: '.9rem', marginTop: '.2rem' }}>{plan.goals}</p>
+            </>
+          )}
+          {plan.special_instructions && (
+            <>
+              <b style={{ fontSize: '.86rem' }}>Special instructions</b>
+              <p className="notice notice-warn" style={{ fontSize: '.9rem', marginTop: '.2rem' }}>{plan.special_instructions}</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {medications.length > 0 && (
+        <div className="card">
+          <h3>Medications</h3>
+          {medications.map((m) => (
+            <div key={m.id} style={{ padding: '.5rem 0', borderBottom: '1px solid var(--line)' }}>
+              <b>{m.name}</b> — {m.dosage}
+              {m.schedule_times?.length > 0 && (
+                <div className="muted" style={{ fontSize: '.84rem' }}>Times: {m.schedule_times.join(', ')}</div>
+              )}
+              {m.instructions && <div className="muted" style={{ fontSize: '.84rem' }}>{m.instructions}</div>}
+            </div>
+          ))}
+          <p className="muted" style={{ fontSize: '.8rem', marginTop: '.5rem' }}>
+            Reminder only — confirm with the office if you have questions about administration.
+          </p>
+        </div>
+      )}
+
+      {documents.length > 0 && (
+        <div className="card">
+          <h3>Physician orders & care plan files</h3>
+          {documents.map((d) => (
+            <button key={d.id} onClick={() => openDocument(d)}
+              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'var(--paper)', border: 'none',
+                borderRadius: 8, padding: '.6rem .8rem', marginBottom: '.4rem', cursor: 'pointer' }}>
+              <span className="pill pill-gold" style={{ marginRight: '.4rem' }}>{d.doc_type.replaceAll('_', ' ')}</span>
+              {d.title}
+            </button>
+          ))}
         </div>
       )}
 
