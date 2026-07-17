@@ -33,6 +33,7 @@ export default function Visit() {
   const [msg, setMsg] = useState(null)          // {kind, text}
   const [busy, setBusy] = useState(false)
   const [gps, setGps] = useState(null)          // last known {lat,lng}
+  const [locationReady, setLocationReady] = useState(null) // null=checking, true=ok, false=denied/unavailable
   const [mileage, setMileage] = useState('')
   const [mileageNotes, setMileageNotes] = useState('')
   const [mileageSaved, setMileageSaved] = useState(false)
@@ -96,6 +97,13 @@ export default function Visit() {
 
   useEffect(() => { load().catch(() => {}) }, [shiftId]) // eslint-disable-line
 
+  useEffect(() => {
+    // Ask for location immediately when the visit screen opens — not just
+    // when the caregiver taps Clock In — so the permission prompt (and any
+    // "please enable location" warning) appears right away.
+    getPosition().then((pos) => { setGps(pos); setLocationReady(!!pos) })
+  }, [])
+
   // ---- derived state (works both online and offline) ----
   const ls = localState()
   const clockedIn = Boolean(visit?.clock_in_at || ls.clock_in_at)
@@ -110,30 +118,49 @@ export default function Visit() {
     setBusy(true)
     const pos = await getPosition()
     setGps(pos)
+    setLocationReady(!!pos)
+
+    if (!pos) {
+      setBusy(false)
+      flash('bad', 'Location access is required to clock in. Please allow location access for this app in your device settings, then try again.', 9000)
+      return
+    }
+
     const at = new Date().toISOString()
 
-    if (client?.latitude && pos) {
+    if (client?.latitude != null && client?.longitude != null) {
       const d = distanceM(pos.lat, pos.lng, client.latitude, client.longitude)
-      if (d > (client.geofence_radius_m || 150)) {
-        flash('warn', `Heads up: you appear to be ${d} m from ${client.first_name}'s home. Clock-in recorded — the office will see a location alert.`, 7000)
+      const radius = client.geofence_radius_m || 150
+      if (d > radius) {
+        const miles = (d / 1609.34).toFixed(2)
+        const alertMsg = `${caregiver.first_name} ${caregiver.last_name} attempted to clock IN for ${client.first_name} ${client.last_name} but was ${miles} mi (${d} m) outside the ${radius} m geofence. Clock-in was blocked.`
+        if (navigator.onLine) {
+          await supabase.from('alerts').insert({
+            alert_type: 'other', severity: 'critical', message: alertMsg,
+            shift_id: shift.id, client_id: client.id, caregiver_id: caregiver.id,
+          })
+        } else {
+          enqueue({ type: 'geofence_block', message: alertMsg, shift_id: shift.id, client_id: client.id, caregiver_id: caregiver.id })
+        }
+        setBusy(false)
+        flash('bad', `You're about ${miles} mi from ${client.first_name}'s home — too far away to clock in. If you believe this is a mistake, please contact the office immediately.`, 12000)
+        return
       }
-    } else if (!pos) {
-      flash('warn', 'GPS unavailable — clock-in recorded without location. The office will see it.', 6000)
     }
 
     if (navigator.onLine) {
       const { data, error } = await supabase.rpc('clock_in', {
-        p_shift_id: shiftId, p_lat: pos?.lat ?? null, p_lng: pos?.lng ?? null, p_at: at,
+        p_shift_id: shiftId, p_lat: pos.lat, p_lng: pos.lng, p_at: at,
       })
       if (error) {
         // Fall back to the offline queue (e.g. flaky connection mid-request)
-        enqueue({ type: 'clock_in', shift_id: shiftId, lat: pos?.lat ?? null, lng: pos?.lng ?? null, at })
+        enqueue({ type: 'clock_in', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
         setLocal({ clock_in_at: at, tasks: planTasks.map((t) => ({ id: `local-${t.id}`, label: t.label, category: t.category, instructions: t.instructions, completed: false })) })
       } else {
         await load()
       }
     } else {
-      enqueue({ type: 'clock_in', shift_id: shiftId, lat: pos?.lat ?? null, lng: pos?.lng ?? null, at })
+      enqueue({ type: 'clock_in', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
       setLocal({ clock_in_at: at, tasks: planTasks.map((t) => ({ id: `local-${t.id}`, label: t.label, category: t.category, instructions: t.instructions, completed: false })) })
       flash('warn', "You're offline — clock-in saved on this phone and will upload automatically.", 6000)
     }
@@ -144,18 +171,46 @@ export default function Visit() {
     if (!confirm('End this visit and clock out?')) return
     setBusy(true)
     const pos = await getPosition()
+    setGps(pos)
+
+    if (!pos) {
+      setBusy(false)
+      flash('bad', 'Location access is required to clock out. Please allow location access and try again.', 9000)
+      return
+    }
+
+    if (client?.latitude != null && client?.longitude != null) {
+      const d = distanceM(pos.lat, pos.lng, client.latitude, client.longitude)
+      const radius = client.geofence_radius_m || 150
+      if (d > radius) {
+        const miles = (d / 1609.34).toFixed(2)
+        const alertMsg = `${caregiver.first_name} ${caregiver.last_name} attempted to clock OUT for ${client.first_name} ${client.last_name} but was ${miles} mi (${d} m) outside the ${radius} m geofence. Clock-out was blocked.`
+        if (navigator.onLine) {
+          await supabase.from('alerts').insert({
+            alert_type: 'other', severity: 'critical', message: alertMsg,
+            shift_id: shift.id, client_id: client.id, caregiver_id: caregiver.id,
+          })
+        } else {
+          enqueue({ type: 'geofence_block', message: alertMsg, shift_id: shift.id, client_id: client.id, caregiver_id: caregiver.id })
+        }
+        setBusy(false)
+        flash('bad', `You're about ${miles} mi from ${client.first_name}'s home — too far away to clock out. If you believe this is a mistake, please contact the office immediately.`, 12000)
+        return
+      }
+    }
+
     const at = new Date().toISOString()
 
     if (navigator.onLine && visit) {
       const { error } = await supabase.rpc('clock_out', {
-        p_visit_id: visit.id, p_lat: pos?.lat ?? null, p_lng: pos?.lng ?? null, p_at: at,
+        p_visit_id: visit.id, p_lat: pos.lat, p_lng: pos.lng, p_at: at,
       })
       if (error) {
-        enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos?.lat ?? null, lng: pos?.lng ?? null, at })
+        enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
         setLocal({ clock_out_at: at })
       } else await load()
     } else {
-      enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos?.lat ?? null, lng: pos?.lng ?? null, at })
+      enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
       setLocal({ clock_out_at: at })
       flash('warn', "You're offline — clock-out saved and will upload automatically.", 6000)
     }
@@ -294,10 +349,15 @@ export default function Visit() {
         <div className="now">{now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>
         {!clockedIn && (
           <>
+            {locationReady === false && (
+              <p className="notice notice-bad" style={{ marginBottom: '.6rem' }}>
+                Location access is blocked or unavailable. Please enable location for this app in your device settings — you cannot clock in without it.
+              </p>
+            )}
             <button className="btn btn-clockin" onClick={clockIn} disabled={busy}>
-              {busy ? 'Getting your location…' : '▶ Start visit (clock in)'}
+              {busy ? 'Checking your location…' : '▶ Start visit (clock in)'}
             </button>
-            <p className="gps-line muted">Your location is checked once at clock-in to confirm you're at the client's home.</p>
+            <p className="gps-line muted">Your location is required and checked at clock-in to confirm you're at the client's home.</p>
           </>
         )}
         {clockedIn && !clockedOut && (

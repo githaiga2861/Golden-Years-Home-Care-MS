@@ -67,6 +67,13 @@ async function run(a) {
       })
       return !error
     }
+    if (a.type === 'geofence_block') {
+      const { error } = await supabase.from('alerts').insert({
+        alert_type: 'other', severity: 'critical', message: a.message,
+        shift_id: a.shift_id, client_id: a.client_id, caregiver_id: a.caregiver_id,
+      })
+      return !error
+    }
     return true // unknown action: drop it rather than block the queue
   } catch { return false }
 }
