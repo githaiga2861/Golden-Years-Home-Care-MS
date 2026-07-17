@@ -33,6 +33,13 @@ export default function Visit() {
   const [msg, setMsg] = useState(null)          // {kind, text}
   const [busy, setBusy] = useState(false)
   const [gps, setGps] = useState(null)          // last known {lat,lng}
+  const [mileage, setMileage] = useState('')
+  const [mileageNotes, setMileageNotes] = useState('')
+  const [mileageSaved, setMileageSaved] = useState(false)
+  const [photos, setPhotos] = useState([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [vitalsHistory, setVitalsHistory] = useState([])
+  const [vitalsForm, setVitalsForm] = useState({ blood_pressure: '', pulse: '', temperature: '', weight: '', blood_glucose: '', notes: '' })
   const [now, setNow] = useState(new Date())
 
   // Local mirror so the screen keeps working offline
@@ -79,6 +86,11 @@ export default function Visit() {
       setTasks(vt || [])
       const { data: n } = await supabase.from('visit_notes').select('*').eq('visit_id', v.id).order('created_at')
       setSavedNotes(n || [])
+      setMileage(v.mileage_miles ?? ''); setMileageNotes(v.mileage_notes || ''); setMileageSaved(!!v.mileage_miles)
+      const { data: ph } = await supabase.from('visit_photos').select('*').eq('visit_id', v.id).order('created_at', { ascending: false })
+      setPhotos(ph || [])
+      const { data: vi } = await supabase.from('visit_vitals').select('*').eq('visit_id', v.id).order('recorded_at', { ascending: false })
+      setVitalsHistory(vi || [])
     }
   }
 
@@ -183,6 +195,54 @@ export default function Visit() {
     setLocal({ pendingNote: true })
     setNote('')
     flash('warn', 'Note saved on this phone — it will upload automatically.')
+  }
+
+  const saveMileage = async () => {
+    if (!visit || mileage === '') return
+    const { error } = await supabase.from('visits').update({
+      mileage_miles: Number(mileage), mileage_notes: mileageNotes || null,
+    }).eq('id', visit.id)
+    if (!error) { setMileageSaved(true); flash('ok', 'Mileage saved.') }
+  }
+
+  const uploadPhoto = async (file) => {
+    if (!visit || !file) return
+    setUploadingPhoto(true)
+    const path = `${visit.id}/${Date.now()}_${file.name}`
+    const { error: upErr } = await supabase.storage.from('visit-photos').upload(path, file)
+    if (!upErr) {
+      await supabase.from('visit_photos').insert({ visit_id: visit.id, storage_path: path })
+      const { data: ph } = await supabase.from('visit_photos').select('*').eq('visit_id', visit.id).order('created_at', { ascending: false })
+      setPhotos(ph || [])
+    }
+    setUploadingPhoto(false)
+  }
+
+  const viewPhoto = async (p) => {
+    const { data } = await supabase.storage.from('visit-photos').createSignedUrl(p.storage_path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  const saveVitals = async () => {
+    if (!visit) return
+    const hasAny = Object.values(vitalsForm).some((v) => v !== '')
+    if (!hasAny) return
+    const row = {
+      visit_id: visit.id,
+      blood_pressure: vitalsForm.blood_pressure || null,
+      pulse: vitalsForm.pulse ? Number(vitalsForm.pulse) : null,
+      temperature: vitalsForm.temperature ? Number(vitalsForm.temperature) : null,
+      weight: vitalsForm.weight ? Number(vitalsForm.weight) : null,
+      blood_glucose: vitalsForm.blood_glucose ? Number(vitalsForm.blood_glucose) : null,
+      notes: vitalsForm.notes || null,
+    }
+    const { error } = await supabase.from('visit_vitals').insert(row)
+    if (!error) {
+      setVitalsForm({ blood_pressure: '', pulse: '', temperature: '', weight: '', blood_glucose: '', notes: '' })
+      const { data: vi } = await supabase.from('visit_vitals').select('*').eq('visit_id', visit.id).order('recorded_at', { ascending: false })
+      setVitalsHistory(vi || [])
+      flash('ok', 'Vitals recorded.')
+    }
   }
 
   const openDocument = async (d) => {
@@ -316,6 +376,68 @@ export default function Visit() {
               </span>
             </label>
           ))}
+        </div>
+      )}
+
+      {clockedIn && visit && (
+        <div className="card">
+          <h3>Vitals</h3>
+          {vitalsHistory.map((v) => (
+            <div key={v.id} style={{ padding: '.4rem 0', borderBottom: '1px solid var(--line)', fontSize: '.88rem' }}>
+              {v.blood_pressure && <span>BP {v.blood_pressure} · </span>}
+              {v.pulse && <span>Pulse {v.pulse} · </span>}
+              {v.temperature && <span>Temp {v.temperature}°F · </span>}
+              {v.weight && <span>Weight {v.weight}lb · </span>}
+              {v.blood_glucose && <span>Glucose {v.blood_glucose} · </span>}
+              <span className="muted">{fmtT(v.recorded_at)}</span>
+              {v.notes && <div className="muted">{v.notes}</div>}
+            </div>
+          ))}
+          <div className="form-row-3" style={{ marginTop: '.6rem' }}>
+            <div className="field"><label>Blood pressure</label><input value={vitalsForm.blood_pressure} onChange={(e) => setVitalsForm({ ...vitalsForm, blood_pressure: e.target.value })} placeholder="120/80" /></div>
+            <div className="field"><label>Pulse</label><input type="number" value={vitalsForm.pulse} onChange={(e) => setVitalsForm({ ...vitalsForm, pulse: e.target.value })} /></div>
+            <div className="field"><label>Temp (°F)</label><input type="number" step="0.1" value={vitalsForm.temperature} onChange={(e) => setVitalsForm({ ...vitalsForm, temperature: e.target.value })} /></div>
+          </div>
+          <div className="form-row-3">
+            <div className="field"><label>Weight (lb)</label><input type="number" step="0.1" value={vitalsForm.weight} onChange={(e) => setVitalsForm({ ...vitalsForm, weight: e.target.value })} /></div>
+            <div className="field"><label>Blood glucose</label><input type="number" step="0.1" value={vitalsForm.blood_glucose} onChange={(e) => setVitalsForm({ ...vitalsForm, blood_glucose: e.target.value })} /></div>
+            <div className="field"><label>Notes</label><input value={vitalsForm.notes} onChange={(e) => setVitalsForm({ ...vitalsForm, notes: e.target.value })} /></div>
+          </div>
+          <button className="btn btn-primary" onClick={saveVitals}>Record vitals</button>
+        </div>
+      )}
+
+      {clockedIn && visit && (
+        <div className="card">
+          <h3>Photos</h3>
+          <p className="muted" style={{ fontSize: '.85rem' }}>For wound documentation or anything the office should see.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', marginBottom: '.6rem' }}>
+            {photos.map((p) => (
+              <button key={p.id} onClick={() => viewPhoto(p)} className="btn btn-outline" style={{ fontSize: '.8rem' }}>
+                {new Date(p.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </button>
+            ))}
+          </div>
+          <input type="file" accept="image/*" capture="environment"
+            onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])} disabled={uploadingPhoto} />
+          {uploadingPhoto && <p className="muted">Uploading…</p>}
+        </div>
+      )}
+
+      {clockedIn && visit && (
+        <div className="card">
+          <h3>Mileage</h3>
+          <div className="form-row">
+            <div className="field"><label>Miles driven for this visit</label>
+              <input type="number" step="0.1" value={mileage} onChange={(e) => { setMileage(e.target.value); setMileageSaved(false) }} />
+            </div>
+            <div className="field"><label>Notes (optional)</label>
+              <input value={mileageNotes} onChange={(e) => { setMileageNotes(e.target.value); setMileageSaved(false) }} placeholder="e.g. office to client" />
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={saveMileage} disabled={mileageSaved || mileage === ''}>
+            {mileageSaved ? 'Saved' : 'Save mileage'}
+          </button>
         </div>
       )}
 
