@@ -1,4 +1,4 @@
-nsched.b64
+node_modules/
+dist/
 *.b64
-
-*.b64
+.DS_Store
