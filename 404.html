@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Golden Years</title>
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages — handles both the main system
+      // (/golden-years-hcms/...) and the Care App (/golden-years-hcms/care-app/...)
+      // by detecting how many path segments belong to the "base" of each app.
+      var l = window.location;
+      var parts = l.pathname.split('/').filter(Boolean); // e.g. ['golden-years-hcms','care-app','visit','123']
+      var isCareApp = parts[1] === 'care-app';
+      var keep = isCareApp ? 2 : 1;
+
+      var base = '/' + parts.slice(0, keep).join('/') + '/';
+      var rest = parts.slice(keep).join('/');
+
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        base + '?/' + rest.replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
