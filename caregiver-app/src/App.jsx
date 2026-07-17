@@ -38,9 +38,13 @@ function Frame() {
   useEffect(() => {
     if (!caregiver) return
     let live = true
-    const check = () =>
-      supabase.from('v_caregiver_unread_updates').select('id', { count: 'exact', head: true })
-        .eq('caregiver_id', caregiver.id).then(({ count }) => live && setUnread(count || 0))
+    const check = async () => {
+      const [a, b] = await Promise.all([
+        supabase.from('v_caregiver_unread_updates').select('id', { count: 'exact', head: true }).eq('caregiver_id', caregiver.id),
+        supabase.from('caregiver_notifications').select('id', { count: 'exact', head: true }).eq('caregiver_id', caregiver.id).is('read_at', null),
+      ])
+      if (live) setUnread((a.count || 0) + (b.count || 0))
+    }
     check()
     const t = setInterval(check, 60000)
     return () => { live = false; clearInterval(t) }

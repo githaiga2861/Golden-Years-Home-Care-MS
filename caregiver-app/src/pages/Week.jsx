@@ -11,8 +11,11 @@ export default function Week() {
   const [tab, setTab] = useState('upcoming')
   const [shifts, setShifts] = useState([])
   const [pastVisits, setPastVisits] = useState([])
+  const [openShifts, setOpenShifts] = useState([])
+  const [busyId, setBusyId] = useState(null)
+  const [msg, setMsg] = useState('')
 
-  useEffect(() => {
+  const loadUpcoming = () => {
     if (!caregiver) return
     const d0 = new Date(); d0.setHours(0, 0, 0, 0)
     const d1 = new Date(d0); d1.setDate(d1.getDate() + 14)
@@ -22,7 +25,8 @@ export default function Week() {
       .gte('starts_at', d0.toISOString()).lt('starts_at', d1.toISOString())
       .order('starts_at')
       .then(({ data }) => setShifts(data || []))
-  }, [caregiver])
+  }
+  useEffect(loadUpcoming, [caregiver]) // eslint-disable-line
 
   useEffect(() => {
     if (!caregiver || tab !== 'past') return
@@ -31,6 +35,30 @@ export default function Week() {
       .order('clock_in_at', { ascending: false }).limit(60)
       .then(({ data }) => setPastVisits(data || []))
   }, [caregiver, tab])
+
+  const loadOpen = () => {
+    supabase.from('shifts').select('*, clients(first_name,last_name,city)')
+      .is('caregiver_id', null).eq('status', 'open')
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at').limit(40)
+      .then(({ data }) => setOpenShifts(data || []))
+  }
+  useEffect(() => { if (tab === 'open') loadOpen() }, [tab])
+
+  const accept = async (shiftId) => {
+    setBusyId(shiftId); setMsg('')
+    const { data, error } = await supabase.rpc('accept_open_shift', { p_shift_id: shiftId })
+    setBusyId(null)
+    if (error || !data) { setMsg('Sorry — someone else already took that shift.'); loadOpen(); return }
+    setMsg('Shift accepted! Check Upcoming.')
+    loadOpen(); loadUpcoming()
+  }
+
+  const release = async (shiftId) => {
+    if (!confirm('Give up this shift? It will go back to the open pool for another caregiver.')) return
+    const { error } = await supabase.rpc('release_shift', { p_shift_id: shiftId })
+    if (!error) loadUpcoming()
+  }
 
   const groups = shifts.reduce((acc, s) => {
     const k = new Date(s.starts_at).toDateString()
@@ -46,9 +74,10 @@ export default function Week() {
   return (
     <>
       <h1>Your schedule</h1>
-      <div className="toolbar mb" style={{ display: 'flex', gap: '.5rem' }}>
-        <button className={`btn ${tab === 'upcoming' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1 }} onClick={() => setTab('upcoming')}>Upcoming</button>
-        <button className={`btn ${tab === 'past' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1 }} onClick={() => setTab('past')}>Past visits & hours</button>
+      <div className="toolbar mb" style={{ display: 'flex', gap: '.4rem' }}>
+        <button className={`btn ${tab === 'upcoming' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1, fontSize: '.86rem' }} onClick={() => setTab('upcoming')}>Upcoming</button>
+        <button className={`btn ${tab === 'open' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1, fontSize: '.86rem' }} onClick={() => setTab('open')}>Open shifts</button>
+        <button className={`btn ${tab === 'past' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1, fontSize: '.86rem' }} onClick={() => setTab('past')}>Past & hours</button>
       </div>
 
       {tab === 'upcoming' && (
@@ -61,16 +90,43 @@ export default function Week() {
             <div key={day} className="card">
               <h3>{new Date(day).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
               {list.map((s) => (
-                <Link key={s.id} to={`/visit/${s.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <div className="shift-line">
+                <div key={s.id} className="shift-line" style={{ alignItems: 'center' }}>
+                  <Link to={`/visit/${s.id}`} style={{ textDecoration: 'none', color: 'inherit', flex: 1, display: 'flex' }}>
                     <div className="timebox"><b>{fmtT(s.starts_at)}</b><span>to {fmtT(s.ends_at)}</span></div>
                     <div style={{ flex: 1 }}>
                       <b>{s.clients.first_name} {s.clients.last_name}</b>
                       <div className="muted" style={{ fontSize: '.82rem' }}>{s.service_type}{s.clients.city ? ` · ${s.clients.city}` : ''}</div>
                     </div>
-                  </div>
-                </Link>
+                  </Link>
+                  {s.status !== 'in_progress' && s.status !== 'completed' && (
+                    <button className="btn btn-quiet" style={{ fontSize: '.78rem' }} onClick={() => release(s.id)}>Give up</button>
+                  )}
+                </div>
               ))}
+            </div>
+          ))}
+        </>
+      )}
+
+      {tab === 'open' && (
+        <>
+          <p className="muted" style={{ marginTop: 0 }}>Unfilled shifts anyone can pick up.</p>
+          {msg && <p className="notice notice-ok">{msg}</p>}
+          {openShifts.length === 0 && (
+            <div className="empty"><h3>No open shifts right now</h3><p>Check back later — new ones will appear here.</p></div>
+          )}
+          {openShifts.map((s) => (
+            <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <b>{s.clients.first_name} {s.clients.last_name}</b>
+                <div className="muted" style={{ fontSize: '.82rem' }}>
+                  {new Date(s.starts_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {fmtT(s.starts_at)}–{fmtT(s.ends_at)}
+                  {s.clients.city ? ` · ${s.clients.city}` : ''}
+                </div>
+              </div>
+              <button className="btn btn-primary" disabled={busyId === s.id} onClick={() => accept(s.id)}>
+                {busyId === s.id ? '…' : 'Accept'}
+              </button>
             </div>
           ))}
         </>
