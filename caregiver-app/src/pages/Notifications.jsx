@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useUnread } from '../context/UnreadContext'
 
 const fmtWhen = (d) => {
   const diffMin = Math.round((Date.now() - new Date(d)) / 60000)
@@ -16,6 +17,7 @@ const TYPE_LABEL = {
 
 export default function Notifications() {
   const { caregiver } = useAuth()
+  const { recheckUpdates } = useUnread()
   const [items, setItems] = useState([])
 
   const load = async () => {
@@ -51,6 +53,7 @@ export default function Notifications() {
     if (item.kind === 'client') await supabase.from('update_reads').insert({ update_id: item.id, caregiver_id: caregiver.id })
     else await supabase.from('caregiver_notifications').update({ read_at: new Date().toISOString() }).eq('id', item.id)
     setItems((prev) => prev.map((i) => i.id === item.id && i.kind === item.kind ? { ...i, unread: false } : i))
+    recheckUpdates()
   }
 
   const markAllRead = async () => {
@@ -61,6 +64,7 @@ export default function Notifications() {
     if (clientIds.length) await supabase.from('update_reads').insert(clientIds.map((id) => ({ update_id: id, caregiver_id: caregiver.id })))
     if (shiftIds.length) await supabase.from('caregiver_notifications').update({ read_at: new Date().toISOString() }).in('id', shiftIds)
     setItems((prev) => prev.map((i) => ({ ...i, unread: false })))
+    recheckUpdates()
   }
 
   if (!caregiver) return null

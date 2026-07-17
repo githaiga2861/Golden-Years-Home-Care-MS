@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useUnread } from '../context/UnreadContext'
 
 const fmtWhen = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 export default function Messages() {
   const { caregiver, session } = useAuth()
+  const { recheckMsg } = useUnread()
   const [thread, setThread] = useState(null)
   const [messages, setMessages] = useState([])
   const [body, setBody] = useState('')
@@ -29,6 +31,7 @@ export default function Messages() {
       const unread = (m || []).filter((x) => x.sender_id !== session.user.id && !x.read_at)
       if (unread.length) {
         await supabase.from('messages').update({ read_at: new Date().toISOString() }).in('id', unread.map((x) => x.id))
+        recheckMsg()
       }
     }
   }

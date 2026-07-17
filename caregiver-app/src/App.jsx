@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate, Outlet } from 'react-r
 import { useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { RefreshProvider, useRefresh } from './context/RefreshContext'
+import { UnreadProvider, useUnread } from './context/UnreadContext'
 import { startSyncLoop, syncQueue, pendingCount } from './lib/offline'
-import { supabase } from './lib/supabase'
 import logo from './assets/logo.png'
 import Login from './pages/Login'
 import Today from './pages/Today'
@@ -56,10 +56,9 @@ function SyncButton() {
 function Frame() {
   const { caregiver } = useAuth()
   const { tick } = useRefresh()
+  const { unreadUpdates: unread, unreadMsg } = useUnread()
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(pendingCount())
-  const [unread, setUnread] = useState(0)
-  const [unreadMsg, setUnreadMsg] = useState(0)
 
   useEffect(() => {
     startSyncLoop((left) => setPending(left))
@@ -70,36 +69,6 @@ function Frame() {
     const t = setInterval(() => setPending(pendingCount()), 8000)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); clearInterval(t) }
   }, [])
-
-  useEffect(() => {
-    if (!caregiver) return
-    let live = true
-    const check = async () => {
-      const [a, b] = await Promise.all([
-        supabase.from('v_caregiver_unread_updates').select('id', { count: 'exact', head: true }).eq('caregiver_id', caregiver.id),
-        supabase.from('caregiver_notifications').select('id', { count: 'exact', head: true }).eq('caregiver_id', caregiver.id).is('read_at', null),
-      ])
-      if (live) setUnread((a.count || 0) + (b.count || 0))
-    }
-    check()
-    const t = setInterval(check, 60000)
-    return () => { live = false; clearInterval(t) }
-  }, [caregiver, tick])
-
-  useEffect(() => {
-    if (!caregiver) return
-    let live = true
-    const check = async () => {
-      const { data: th } = await supabase.from('message_threads').select('id').eq('caregiver_id', caregiver.id).maybeSingle()
-      if (!th) return
-      const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true })
-        .eq('thread_id', th.id).is('read_at', null).neq('sender_id', caregiver.profile_id || '')
-      if (live) setUnreadMsg(count || 0)
-    }
-    check()
-    const t = setInterval(check, 30000)
-    return () => { live = false; clearInterval(t) }
-  }, [caregiver, tick])
 
   return (
     <div className="app">
@@ -135,6 +104,7 @@ function Gate({ children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <UnreadProvider>
       <RefreshProvider>
         <BrowserRouter>
           <Routes>
@@ -150,6 +120,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </RefreshProvider>
+      </UnreadProvider>
     </AuthProvider>
   )
 }
