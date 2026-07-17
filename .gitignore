@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.b64
 .DS_Store
+supabase/.temp/
