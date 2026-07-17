@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fullName, fmtDate } from '../lib/format'
 import { geocodeAddress } from '../lib/geocode'
-import { Modal, Field, Empty, Pill } from '../components/Ui'
+import { Modal, Field, Empty, Pill, ProfileHeader } from '../components/Ui'
 import EditableSelect from '../components/EditableSelect'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 
@@ -687,36 +687,52 @@ function ClientDetail({ client, onClose }) {
 
   const tabs = ['plan', 'clinical', 'physicians', 'medications', 'documents', 'operational', 'details']
   const labels = { plan: 'Care plan', clinical: 'Clinical', physicians: 'Physicians', medications: 'Medications', documents: 'Documents', operational: 'Operational', details: 'Details' }
+  const STATUS_KIND = { active: 'ok', on_hold: 'warn', hospitalized: 'bad', discharged: 'muted' }
+  const STATUS_LABEL = { active: 'Active', on_hold: 'On hold', hospitalized: 'Hospitalized', discharged: 'Discharged' }
+  const initials = `${client.first_name?.[0] || ''}${client.last_name?.[0] || ''}`.toUpperCase()
 
   return (
-    <Modal title={fullName(client)} onClose={onClose} wide footer={
-      <button className="btn btn-quiet" onClick={onClose}>Close</button>
-    }>
-      <div className="toolbar mb">
-        {tabs.map((t) => (
-          <button key={t} className={`btn ${tab === t ? 'btn-primary' : 'btn-outline'}`} style={{ padding: '.4rem .8rem', fontSize: '.86rem' }} onClick={() => setTab(t)}>
-            {labels[t]}
-          </button>
-        ))}
+    <Modal
+      onClose={onClose}
+      xwide
+      header={
+        <ProfileHeader name={fullName(client)} initials={initials} subtitle={client.city ? `${client.city}, WA` : 'Client'}>
+          <Pill kind={STATUS_KIND[client.status] || (client.is_active ? 'ok' : 'muted')}>{STATUS_LABEL[client.status] || (client.is_active ? 'Active' : 'Inactive')}</Pill>
+          {client.fall_risk && <Pill kind="bad">Fall risk</Pill>}
+        </ProfileHeader>
+      }
+      footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}
+    >
+      <div className="profile-layout">
+        <div className="profile-nav">
+          {tabs.map((t) => (
+            <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{labels[t]}</button>
+          ))}
+        </div>
+        <div className="profile-content">
+          {tab === 'plan' && <CarePlanEditor clientId={client.id} />}
+          {tab === 'clinical' && <ClinicalTab clientId={client.id} />}
+          {tab === 'physicians' && <PhysiciansTab clientId={client.id} />}
+          {tab === 'medications' && <MedicationsTab clientId={client.id} />}
+          {tab === 'documents' && <Documents clientId={client.id} />}
+          {tab === 'operational' && <OperationalTab client={client} />}
+          {tab === 'details' && (
+            <>
+              <dl className="deflist">
+                <div><dt>Address</dt><dd>{client.address}{client.city ? `, ${client.city}` : ''} {client.zip || ''}</dd></div>
+                <div><dt>Phone</dt><dd>{client.phone || '—'}</dd></div>
+                <div><dt>Emergency contact</dt><dd>{client.emergency_contact_name || '—'} {client.emergency_contact_phone || ''}</dd></div>
+                <div><dt>Bill rate</dt><dd>{client.bill_rate ? `$${Number(client.bill_rate).toFixed(2)}/h · ${client.billing_cycle}` : '—'}</dd></div>
+                <div className="span2"><dt>GPS location</dt><dd>{client.latitude ? `${client.formatted_address || `${client.latitude}, ${client.longitude}`} (±${client.geofence_radius_m} m)` : 'Not located yet.'}</dd></div>
+                {client.service_notes && <div className="span2"><dt>Notes</dt><dd className="muted">{client.service_notes}</dd></div>}
+              </dl>
+              {editing
+                ? <ClientModal client={client} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
+                : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
+            </>
+          )}
+        </div>
       </div>
-      {tab === 'plan' && <CarePlanEditor clientId={client.id} />}
-      {tab === 'clinical' && <ClinicalTab clientId={client.id} />}
-      {tab === 'physicians' && <PhysiciansTab clientId={client.id} />}
-      {tab === 'medications' && <MedicationsTab clientId={client.id} />}
-      {tab === 'documents' && <Documents clientId={client.id} />}
-      {tab === 'operational' && <OperationalTab client={client} />}
-      {tab === 'details' && (
-        <>
-          <p><b>Address:</b> {client.address}{client.city ? `, ${client.city}` : ''} {client.zip || ''}</p>
-          <p><b>Phone:</b> {client.phone || '—'} · <b>Emergency:</b> {client.emergency_contact_name || '—'} {client.emergency_contact_phone || ''}</p>
-          <p><b>Bill rate:</b> {client.bill_rate ? `$${Number(client.bill_rate).toFixed(2)}/h` : '—'} · <b>Cycle:</b> {client.billing_cycle}</p>
-          <p><b>GPS:</b> {client.latitude ? `${client.formatted_address || `${client.latitude}, ${client.longitude}`} (±${client.geofence_radius_m} m)` : 'Not located yet.'}</p>
-          <p className="muted">{client.service_notes}</p>
-          {editing
-            ? <ClientModal client={client} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
-            : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
-        </>
-      )}
     </Modal>
   )
 }
@@ -743,23 +759,31 @@ function ClinicalTab({ clientId }) {
 
   return (
     <>
-      {client.fall_risk && <p className="notice notice-bad">⚠ Fall risk</p>}
-      <p><b>Status:</b> {STATUS_LABEL[client.status] || 'Active'}</p>
-      <p><b>Date of birth:</b> {client.date_of_birth || 'Not set'} · <b>Gender:</b> {client.gender || 'Not set'}</p>
-      <p><b>Preferred language:</b> {client.preferred_language || 'Not set'}</p>
-      <p><b>Payer type:</b> {client.payer_types?.label || 'Not set'}</p>
-      <p><b>Mobility level:</b> {client.mobility_levels?.label || 'Not set'}</p>
-      <p><b>Cognitive status:</b> {client.cognitive_statuses?.label || 'Not set'}</p>
-      <p><b>Diagnoses:</b> {diagnoses.length ? diagnoses.join(', ') : 'None recorded'}</p>
-      <p><b>Allergies:</b> {allergies.length ? allergies.join(', ') : 'None recorded'}</p>
-      <p><b>Special precautions:</b> {client.special_precautions?.length ? client.special_precautions.join(', ') : 'None recorded'}</p>
+      <h3 className="thread">Overview</h3>
+      <dl className="deflist">
+        <div><dt>Status</dt><dd>{STATUS_LABEL[client.status] || 'Active'}</dd></div>
+        <div><dt>Date of birth</dt><dd>{client.date_of_birth || 'Not set'}</dd></div>
+        <div><dt>Gender</dt><dd>{client.gender || 'Not set'}</dd></div>
+        <div><dt>Preferred language</dt><dd>{client.preferred_language || 'Not set'}</dd></div>
+        <div><dt>Payer type</dt><dd>{client.payer_types?.label || 'Not set'}</dd></div>
+        <div><dt>Mobility level</dt><dd>{client.mobility_levels?.label || 'Not set'}</dd></div>
+        <div><dt>Cognitive status</dt><dd>{client.cognitive_statuses?.label || 'Not set'}</dd></div>
+        <div><dt>Fall risk</dt><dd>{client.fall_risk ? <Pill kind="bad">Yes</Pill> : 'No'}</dd></div>
+        <div className="span2"><dt>Diagnoses</dt><dd>{diagnoses.length ? diagnoses.join(', ') : 'None recorded'}</dd></div>
+        <div className="span2"><dt>Allergies</dt><dd>{allergies.length ? allergies.join(', ') : 'None recorded'}</dd></div>
+        <div className="span2"><dt>Special precautions</dt><dd>{client.special_precautions?.length ? client.special_precautions.join(', ') : 'None recorded'}</dd></div>
+      </dl>
 
       <h3 className="thread mt">Case manager & RN</h3>
-      <p><b>Case manager:</b> {client.case_manager_name || 'Not set'} {client.case_manager_phone}</p>
-      <p><b>RN:</b> {client.rn_name || 'Not set'} {client.rn_phone}</p>
+      <dl className="deflist">
+        <div><dt>Case manager</dt><dd>{client.case_manager_name || 'Not set'} {client.case_manager_phone}</dd></div>
+        <div><dt>RN</dt><dd>{client.rn_name || 'Not set'} {client.rn_phone}</dd></div>
+      </dl>
 
       <h3 className="thread mt">Responsible party</h3>
-      <p>{client.responsible_party_name || 'Not set'} {client.responsible_party_relationship && `(${client.responsible_party_relationship})`} {client.responsible_party_phone}</p>
+      <dl className="deflist">
+        <div className="span2"><dt>Name & relationship</dt><dd>{client.responsible_party_name || 'Not set'} {client.responsible_party_relationship && `(${client.responsible_party_relationship})`} {client.responsible_party_phone}</dd></div>
+      </dl>
 
       <h3 className="thread mt">Additional emergency contacts</h3>
       {contacts.length === 0 && <p className="muted">None recorded.</p>}

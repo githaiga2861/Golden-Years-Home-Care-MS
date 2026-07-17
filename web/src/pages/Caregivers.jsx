@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fullName, WEEKDAYS } from '../lib/format'
-import { Modal, Field, Empty, Pill } from '../components/Ui'
+import { Modal, Field, Empty, Pill, ProfileHeader } from '../components/Ui'
 import EditableSelect from '../components/EditableSelect'
 import { createCaregiverAccount } from '../lib/createCaregiverAccount'
 
@@ -454,32 +454,57 @@ function CaregiverModal({ caregiver, onClose, onSaved }) {
 function CaregiverDetail({ caregiver, onClose }) {
   const [tab, setTab] = useState('availability')
   const [editing, setEditing] = useState(false)
+  const tabs = ['availability', 'timeoff', 'credentials', 'account', 'details']
+  const labels = { availability: 'Availability', timeoff: 'Time off', credentials: 'Credentials', account: 'App account', details: 'Details' }
+  const initials = `${caregiver.first_name?.[0] || ''}${caregiver.last_name?.[0] || ''}`.toUpperCase()
 
   return (
-    <Modal title={fullName(caregiver)} onClose={onClose} wide footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}>
-      <div className="toolbar mb">
-        {['availability', 'timeoff', 'credentials', 'account', 'details'].map((t) => (
-          <button key={t} className={`btn ${tab === t ? 'btn-primary' : 'btn-outline'}`} style={{ padding: '.4rem .9rem' }} onClick={() => setTab(t)}>
-            {{ availability: 'Availability', timeoff: 'Time off', credentials: 'Credentials', account: 'App account', details: 'Details' }[t]}
-          </button>
-        ))}
+    <Modal
+      onClose={onClose}
+      xwide
+      header={
+        <ProfileHeader name={fullName(caregiver)} initials={initials} subtitle={caregiver.employee_id ? `Employee #${caregiver.employee_id}` : 'Caregiver'}>
+          <Pill kind={caregiver.is_active ? 'ok' : 'muted'}>{caregiver.is_active ? 'Active' : 'Inactive'}</Pill>
+          {caregiver.caregiver_kind === 'live_in' && <Pill kind="info">Live-in</Pill>}
+          {caregiver.employment_type && <Pill kind="muted">{caregiver.employment_type}</Pill>}
+        </ProfileHeader>
+      }
+      footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}
+    >
+      <div className="profile-layout">
+        <div className="profile-nav">
+          {tabs.map((t) => (
+            <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{labels[t]}</button>
+          ))}
+        </div>
+        <div className="profile-content">
+          {tab === 'availability' && <AvailabilityEditor caregiverId={caregiver.id} />}
+          {tab === 'timeoff' && <TimeOffTab caregiverId={caregiver.id} />}
+          {tab === 'credentials' && <CredentialsTab caregiverId={caregiver.id} />}
+          {tab === 'account' && <AccountLink caregiver={caregiver} />}
+          {tab === 'details' && (
+            <>
+              <dl className="deflist">
+                <div><dt>Phone</dt><dd>{caregiver.phone || '—'}</dd></div>
+                <div><dt>Email</dt><dd>{caregiver.email || '—'}</dd></div>
+                <div><dt>Type</dt><dd>{caregiver.caregiver_kind === 'live_in' ? 'Live-in' : 'Hourly'}</dd></div>
+                <div><dt>Pay rate</dt><dd>{caregiver.hourly_rate ? `$${Number(caregiver.hourly_rate).toFixed(2)}/h` : '—'}</dd></div>
+                <div><dt>Mileage</dt><dd>{caregiver.mileage_rate ? `$${Number(caregiver.mileage_rate).toFixed(2)}/mi` : 'Not reimbursed'}</dd></div>
+                <div><dt>Home address</dt><dd>{caregiver.address || '—'}</dd></div>
+                <div><dt>Employment type</dt><dd>{caregiver.employment_type || '—'}</dd></div>
+                <div><dt>Payroll ID</dt><dd>{caregiver.payroll_id || '—'}</dd></div>
+                <div><dt>Overtime rate</dt><dd>{caregiver.overtime_rate ? `$${Number(caregiver.overtime_rate).toFixed(2)}/h` : '—'}</dd></div>
+                <div><dt>Max hours/week</dt><dd>{caregiver.max_hours_per_week || '—'}</dd></div>
+                <div className="span2"><dt>Emergency contact</dt><dd>{caregiver.emergency_contact_name || '—'} {caregiver.emergency_contact_phone || ''}</dd></div>
+                {caregiver.notes && <div className="span2"><dt>Notes</dt><dd className="muted">{caregiver.notes}</dd></div>}
+              </dl>
+              {editing
+                ? <CaregiverModal caregiver={caregiver} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
+                : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
+            </>
+          )}
+        </div>
       </div>
-      {tab === 'availability' && <AvailabilityEditor caregiverId={caregiver.id} />}
-      {tab === 'timeoff' && <TimeOffTab caregiverId={caregiver.id} />}
-      {tab === 'credentials' && <CredentialsTab caregiverId={caregiver.id} />}
-      {tab === 'account' && <AccountLink caregiver={caregiver} />}
-      {tab === 'details' && (
-        <>
-          <p><b>Phone:</b> {caregiver.phone || '—'} · <b>Email:</b> {caregiver.email || '—'}</p>
-          <p><b>Type:</b> {caregiver.caregiver_kind === 'live_in' ? 'Live-in' : 'Hourly'} ·
-             <b> Pay:</b> {caregiver.hourly_rate ? ` $${Number(caregiver.hourly_rate).toFixed(2)}/h` : ' —'} ·
-             <b> Mileage:</b> {caregiver.mileage_rate ? ` $${Number(caregiver.mileage_rate).toFixed(2)}/mi` : ' not reimbursed'}</p>
-          <p className="muted">{caregiver.notes}</p>
-          {editing
-            ? <CaregiverModal caregiver={caregiver} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
-            : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
-        </>
-      )}
     </Modal>
   )
 }
