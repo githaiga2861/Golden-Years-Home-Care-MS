@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fullName, WEEKDAYS } from '../lib/format'
 import { Modal, Field, Empty, Pill } from '../components/Ui'
+import EditableSelect from '../components/EditableSelect'
 
 export default function Caregivers() {
   const [rows, setRows] = useState([])
@@ -55,9 +56,22 @@ function CaregiverModal({ caregiver, onClose, onSaved }) {
   const [f, setF] = useState(caregiver || {
     first_name: '', last_name: '', phone: '', email: '', address: '',
     caregiver_kind: 'hourly', hourly_rate: '', mileage_rate: '', notes: '', is_active: true,
+    employee_id: '', emergency_contact_name: '', emergency_contact_phone: '',
+    employment_type: '', overtime_rate: '', payroll_id: '', max_hours_per_week: '',
   })
+  const [skillIds, setSkillIds] = useState([])
+  const [restrictionIds, setRestrictionIds] = useState([])
   const [err, setErr] = useState('')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+
+  useEffect(() => {
+    if (!isNew) {
+      supabase.from('caregiver_skills').select('skill_id').eq('caregiver_id', caregiver.id)
+        .then(({ data }) => setSkillIds((data || []).map((r) => r.skill_id)))
+      supabase.from('caregiver_restrictions').select('restriction_id').eq('caregiver_id', caregiver.id)
+        .then(({ data }) => setRestrictionIds((data || []).map((r) => r.restriction_id)))
+    }
+  }, [caregiver?.id]) // eslint-disable-line
 
   const save = async () => {
     setErr('')
@@ -65,13 +79,21 @@ function CaregiverModal({ caregiver, onClose, onSaved }) {
     const row = { ...f,
       hourly_rate: f.hourly_rate === '' ? null : f.hourly_rate,
       mileage_rate: f.mileage_rate === '' ? null : f.mileage_rate,
+      overtime_rate: f.overtime_rate === '' ? null : f.overtime_rate,
+      max_hours_per_week: f.max_hours_per_week === '' ? null : f.max_hours_per_week,
+      employment_type: f.employment_type || null,
     }
     delete row.id; delete row.created_at; delete row.credentials; delete row.profile_id; delete row.hire_date
     const q = isNew
-      ? supabase.from('caregivers').insert(row)
-      : supabase.from('caregivers').update(row).eq('id', caregiver.id)
-    const { error } = await q
+      ? supabase.from('caregivers').insert(row).select().single()
+      : supabase.from('caregivers').update(row).eq('id', caregiver.id).select().single()
+    const { data: saved, error } = await q
     if (error) return setErr(error.message)
+    const cid = saved.id
+    await supabase.from('caregiver_skills').delete().eq('caregiver_id', cid)
+    if (skillIds.length) await supabase.from('caregiver_skills').insert(skillIds.map((s) => ({ caregiver_id: cid, skill_id: s })))
+    await supabase.from('caregiver_restrictions').delete().eq('caregiver_id', cid)
+    if (restrictionIds.length) await supabase.from('caregiver_restrictions').insert(restrictionIds.map((r) => ({ caregiver_id: cid, restriction_id: r })))
     onSaved()
   }
 
@@ -100,6 +122,37 @@ function CaregiverModal({ caregiver, onClose, onSaved }) {
         <Field label="Mileage ($/mi)" help="Leave blank if not reimbursed."><input type="number" step="0.01" value={f.mileage_rate ?? ''} onChange={set('mileage_rate')} /></Field>
       </div>
       <Field label="Notes"><textarea rows={2} value={f.notes || ''} onChange={set('notes')} /></Field>
+
+      <h3 className="thread mt">Identity & payroll</h3>
+      <div className="form-row-3">
+        <Field label="Employee ID"><input value={f.employee_id || ''} onChange={set('employee_id')} /></Field>
+        <Field label="Employment type">
+          <select value={f.employment_type || ''} onChange={set('employment_type')}>
+            <option value="">Select…</option>
+            <option value="W2">W-2 employee</option>
+            <option value="1099">1099 contractor</option>
+          </select>
+        </Field>
+        <Field label="Payroll ID"><input value={f.payroll_id || ''} onChange={set('payroll_id')} /></Field>
+      </div>
+      <div className="form-row-3">
+        <Field label="Home address"><input value={f.address || ''} onChange={set('address')} /></Field>
+        <Field label="Overtime rate ($/h)"><input type="number" step="0.01" value={f.overtime_rate ?? ''} onChange={set('overtime_rate')} /></Field>
+        <Field label="Max hours/week"><input type="number" step="0.5" value={f.max_hours_per_week ?? ''} onChange={set('max_hours_per_week')} /></Field>
+      </div>
+
+      <h3 className="thread mt">Emergency contact</h3>
+      <div className="form-row">
+        <Field label="Name"><input value={f.emergency_contact_name || ''} onChange={set('emergency_contact_name')} /></Field>
+        <Field label="Phone"><input value={f.emergency_contact_phone || ''} onChange={set('emergency_contact_phone')} /></Field>
+      </div>
+
+      <h3 className="thread mt">Skills & matching</h3>
+      <EditableSelect table="skills_list" label="Specialized skills" value={skillIds} onChange={setSkillIds} multi />
+      <EditableSelect table="restrictions_list" label="Client matching restrictions" value={restrictionIds} onChange={setRestrictionIds} multi />
+      <p className="muted" style={{ fontSize: '.84rem' }}>
+        Background check, TB test, and CPR/First Aid are tracked in the Credentials tab after saving.
+      </p>
     </Modal>
   )
 }
@@ -111,13 +164,14 @@ function CaregiverDetail({ caregiver, onClose }) {
   return (
     <Modal title={fullName(caregiver)} onClose={onClose} wide footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}>
       <div className="toolbar mb">
-        {['availability', 'credentials', 'account', 'details'].map((t) => (
+        {['availability', 'timeoff', 'credentials', 'account', 'details'].map((t) => (
           <button key={t} className={`btn ${tab === t ? 'btn-primary' : 'btn-outline'}`} style={{ padding: '.4rem .9rem' }} onClick={() => setTab(t)}>
-            {{ availability: 'Availability', credentials: 'Credentials', account: 'App account', details: 'Details' }[t]}
+            {{ availability: 'Availability', timeoff: 'Time off', credentials: 'Credentials', account: 'App account', details: 'Details' }[t]}
           </button>
         ))}
       </div>
       {tab === 'availability' && <AvailabilityEditor caregiverId={caregiver.id} />}
+      {tab === 'timeoff' && <TimeOffTab caregiverId={caregiver.id} />}
       {tab === 'credentials' && <CredentialsTab caregiverId={caregiver.id} />}
       {tab === 'account' && <AccountLink caregiver={caregiver} />}
       {tab === 'details' && (
@@ -133,6 +187,64 @@ function CaregiverDetail({ caregiver, onClose }) {
         </>
       )}
     </Modal>
+  )
+}
+
+function TimeOffTab({ caregiverId }) {
+  const [list, setList] = useState([])
+  const [f, setF] = useState({ starts_at: '', ends_at: '', reason: '' })
+  const [err, setErr] = useState('')
+
+  const load = () => supabase.from('caregiver_time_off').select('*').eq('caregiver_id', caregiverId)
+    .order('starts_at', { ascending: false }).then(({ data }) => setList(data || []))
+  useEffect(() => { load() }, [caregiverId]) // eslint-disable-line
+
+  const add = async () => {
+    setErr('')
+    if (!f.starts_at || !f.ends_at) return setErr('Start and end are required.')
+    const { error } = await supabase.from('caregiver_time_off').insert({
+      caregiver_id: caregiverId, starts_at: f.starts_at, ends_at: f.ends_at, reason: f.reason, status: 'approved',
+    })
+    if (error) return setErr(error.message)
+    setF({ starts_at: '', ends_at: '', reason: '' })
+    load()
+  }
+  const setStatus = async (id, status) => { await supabase.from('caregiver_time_off').update({ status }).eq('id', id); load() }
+  const remove = async (id) => { await supabase.from('caregiver_time_off').delete().eq('id', id); load() }
+
+  const STATUS_KIND = { pending: 'warn', approved: 'ok', denied: 'bad' }
+
+  return (
+    <>
+      {list.map((t) => (
+        <div key={t.id} className="card card-pad mb" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <b>{new Date(t.starts_at).toLocaleDateString()} → {new Date(t.ends_at).toLocaleDateString()}</b>
+            {t.reason && <div className="muted" style={{ fontSize: '.85rem' }}>{t.reason}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+            <Pill kind={STATUS_KIND[t.status] || 'muted'}>{t.status}</Pill>
+            {t.status === 'pending' && (
+              <>
+                <button className="btn btn-outline" onClick={() => setStatus(t.id, 'approved')}>Approve</button>
+                <button className="btn btn-outline" onClick={() => setStatus(t.id, 'denied')}>Deny</button>
+              </>
+            )}
+            <button className="btn btn-quiet" onClick={() => remove(t.id)}>Remove</button>
+          </div>
+        </div>
+      ))}
+      {list.length === 0 && <p className="muted">No time off recorded yet.</p>}
+      <h3 className="thread mt">Block time off (auto-approved)</h3>
+      {err && <p className="notice notice-bad">{err}</p>}
+      <div className="form-row">
+        <Field label="Starts"><input type="datetime-local" value={f.starts_at} onChange={(e) => setF({ ...f, starts_at: e.target.value })} /></Field>
+        <Field label="Ends"><input type="datetime-local" value={f.ends_at} onChange={(e) => setF({ ...f, ends_at: e.target.value })} /></Field>
+      </div>
+      <Field label="Reason (optional)"><input value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></Field>
+      <button className="btn btn-primary" onClick={add}>Add time off</button>
+      <p className="muted mt" style={{ fontSize: '.84rem' }}>Caregivers can also request time off from the Care App — requests appear here as "pending" for you to approve or deny.</p>
+    </>
   )
 }
 
