@@ -61,7 +61,7 @@ button { font-family: var(--font-body); }
 
 /* ---------- buttons ---------- */
 .btn {
-  display: inline-flex; align-items: center; gap: .45rem;
+  display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap;
   padding: .58rem 1.05rem; border-radius: 8px; border: 1px solid transparent;
   font-weight: 600; font-size: .92rem; cursor: pointer; transition: background .15s, border-color .15s;
 }
@@ -221,6 +221,9 @@ table.data tr.click:hover { background: var(--blue-soft); }
   .sidebar { width: 200px; }
   .form-row, .form-row-3 { grid-template-columns: 1fr; }
   .cal-grid { grid-template-columns: 1fr; }
+  .land-top { padding: 1rem 1.1rem; max-width: 100%; }
+  .land-top .brand-mark { height: 46px; }
+  .land-top .brandline small { font-size: .62rem; }
 }
 
 /* ---------- login ---------- */
