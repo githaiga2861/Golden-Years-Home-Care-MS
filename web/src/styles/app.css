@@ -183,6 +183,11 @@ table.data tr.click:hover { background: var(--blue-soft); }
 .deflist dd { margin: 0; font-size: .95rem; }
 .deflist .span2 { grid-column: 1 / -1; }
 
+.blur-box {
+  display: inline-block; filter: blur(4px); user-select: none; background: var(--paper);
+  border-radius: 4px; padding: .05rem .5rem; color: transparent;
+}
+
 @media (max-width: 720px) {
   .profile-layout { flex-direction: column; }
   .profile-nav { flex-direction: row; flex-wrap: wrap; width: 100%; position: static; }
@@ -233,6 +238,7 @@ table.data tr.click:hover { background: var(--blue-soft); }
 .land-top .brandline { display: flex; align-items: center; gap: .65rem; font-family: var(--font-display); font-weight: 700; color: var(--blue-ink); }
 .land-top .brandline small { display: block; font-family: var(--font-body); font-weight: 500; color: var(--muted); font-size: .72rem; letter-spacing: .04em; }
 .hero { max-width: 1120px; width: 100%; margin: 0 auto; padding: 4.2rem 2rem 3rem; display: grid; grid-template-columns: 1.15fr .85fr; gap: 3rem; align-items: center; }
+.hero-flip { grid-template-columns: .85fr 1.15fr; padding-top: 0; }
 .hero h1 { font-size: clamp(2rem, 4.4vw, 3.1rem); line-height: 1.08; letter-spacing: -.015em; margin-bottom: 1rem; }
 .hero h1 .goldword { color: transparent; background: linear-gradient(100deg, #a8871a, var(--gold) 60%, #e2c353); -webkit-background-clip: text; background-clip: text; }
 .hero .lede { color: var(--muted); font-size: 1.06rem; max-width: 46ch; }

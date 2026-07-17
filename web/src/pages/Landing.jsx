@@ -42,6 +42,27 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="hero hero-flip">
+        <div className="hero-panel">
+          <div className="row"><div className="ic">▤</div><div><b>Your schedule, always current</b><span>See every upcoming visit and each client's care plan the moment the office updates it.</span></div></div>
+          <div className="row"><div className="ic">✓</div><div><b>Clock in/out that protects you</b><span>GPS-verified visits mean your hours are never in dispute — accurate pay, every time.</span></div></div>
+          <div className="row"><div className="ic">✉</div><div><b>Talk to the office directly</b><span>Message the office and get instant updates on schedule changes — no phone tag.</span></div></div>
+          <div className="row"><div className="ic">◷</div><div><b>Your hours, at a glance</b><span>Check your worked hours and verification status right from your phone.</span></div></div>
+        </div>
+        <div>
+          <h1 className="thread" style={{ fontSize: 'clamp(1.6rem, 3vw, 2.3rem)' }}>
+            Built for the office <br />— and for <span className="goldword">you</span> too.
+          </h1>
+          <p className="lede">
+            The Golden Years Care App isn't just a time clock. It's where you see your schedule, your
+            clients' care needs, and your own verified hours — all in one place, on your phone.
+          </p>
+          <div className="hero-actions">
+            <a href="#caregiver-app" className="btn btn-outline">See the Caregiver App</a>
+          </div>
+        </div>
+      </section>
+
       <section className="land-apps" id="caregiver-app">
         <div className="land-apps-inner">
           <div className="app-card">

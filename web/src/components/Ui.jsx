@@ -48,6 +48,31 @@ export function ProfileHeader({ name, subtitle, initials, children }) {
   )
 }
 
+export function TechSupportPreview({ title, row, type, onClose }) {
+  const initials = title.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+  return (
+    <Modal
+      onClose={onClose}
+      header={<ProfileHeader name={title} initials={initials} subtitle={type === 'client' ? 'Client' : 'Caregiver'} />}
+      footer={<button className="btn btn-quiet" onClick={onClose}>Close</button>}
+    >
+      <p className="notice notice-warn">
+        You're viewing this {type} in Technical Support mode. Address, clinical, billing, and other sensitive details
+        are not shown here — and are never sent to this account, even in the background.
+      </p>
+      <dl className="deflist">
+        <div><dt>Status</dt><dd>{row.is_active ? 'Active' : 'Inactive'}{row.status ? ` (${row.status})` : ''}</dd></div>
+        {type === 'client' && <div><dt>Location</dt><dd>{row.city ? `${row.city}, ${row.state || 'WA'}` : '—'}</dd></div>}
+        {type === 'client' && <div><dt>Authorized hrs/week</dt><dd>{row.authorized_hours_per_week ?? '—'}</dd></div>}
+        {type === 'caregiver' && <div><dt>Type</dt><dd>{row.caregiver_kind === 'live_in' ? 'Live-in' : 'Hourly'}</dd></div>}
+        {type === 'caregiver' && <div><dt>Employment type</dt><dd>{row.employment_type || '—'}</dd></div>}
+        <div><dt>On file since</dt><dd>{row.created_at ? new Date(row.created_at).toLocaleDateString() : '—'}</dd></div>
+      </dl>
+      <p className="muted" style={{ fontSize: '.84rem' }}>Need full details? Ask an office admin, scheduler, or coordinator to look this up.</p>
+    </Modal>
+  )
+}
+
 export function Pill({ kind = 'muted', children }) {
   return <span className={`pill pill-${kind}`}>{children}</span>
 }

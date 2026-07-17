@@ -1,19 +1,27 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fullName, WEEKDAYS } from '../lib/format'
-import { Modal, Field, Empty, Pill, ProfileHeader } from '../components/Ui'
+import { Modal, Field, Empty, Pill, ProfileHeader, TechSupportPreview } from '../components/Ui'
+import { useAuth } from '../context/AuthContext'
 import EditableSelect from '../components/EditableSelect'
 import { createCaregiverAccount } from '../lib/createCaregiverAccount'
 
 export default function Caregivers() {
+  const { profile } = useAuth()
+  const isTechSupport = profile?.role === 'tech_support'
   const [rows, setRows] = useState([])
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState(null)
 
-  const load = () =>
-    supabase.from('caregivers').select('*').order('last_name').then(({ data }) => setRows(data || []))
-  useEffect(() => { load() }, [])
+  const load = () => {
+    if (isTechSupport) {
+      supabase.from('v_caregivers_directory').select('*').order('last_name').then(({ data }) => setRows(data || []))
+    } else {
+      supabase.from('caregivers').select('*').order('last_name').then(({ data }) => setRows(data || []))
+    }
+  }
+  useEffect(() => { load() }, [isTechSupport]) // eslint-disable-line
 
   const filtered = rows.filter((r) => fullName(r).toLowerCase().includes(q.toLowerCase()))
 
@@ -21,24 +29,27 @@ export default function Caregivers() {
     <>
       <div className="page-head">
         <div><h1 className="thread">Caregivers</h1><div className="sub">Your team, their availability, rates, and credentials.</div></div>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Register caregiver</button>
+        {!isTechSupport && <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Register caregiver</button>}
       </div>
+      {isTechSupport && (
+        <p className="notice notice-warn mb">Technical Support mode: sensitive caregiver details (contact info, pay, and credentials) are hidden and never sent to this account.</p>
+      )}
       <div className="toolbar mb">
         <input className="searchbox" placeholder="Search caregivers…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="card">
         {filtered.length === 0 ? <Empty title="No caregivers yet" hint="Register your first caregiver to start scheduling." /> : (
           <table className="data">
-            <thead><tr><th>Caregiver</th><th>Phone</th><th>Type</th><th className="num">Pay rate</th><th className="num">Mileage</th><th>App account</th><th>Status</th></tr></thead>
+            <thead><tr><th>Caregiver</th>{!isTechSupport && <th>Phone</th>}<th>Type</th>{!isTechSupport && <th className="num">Pay rate</th>}{!isTechSupport && <th className="num">Mileage</th>}{!isTechSupport && <th>App account</th>}<th>Status</th></tr></thead>
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id} className="click" onClick={() => setSelected(r)}>
                   <td><b>{fullName(r)}</b></td>
-                  <td>{r.phone || '—'}</td>
+                  {!isTechSupport && <td>{r.phone || '—'}</td>}
                   <td>{r.caregiver_kind === 'live_in' ? <Pill kind="gold">Live-in</Pill> : <Pill kind="info">Hourly</Pill>}</td>
-                  <td className="num">{r.hourly_rate ? `$${Number(r.hourly_rate).toFixed(2)}/h` : '—'}</td>
-                  <td className="num">{r.mileage_rate ? `$${Number(r.mileage_rate).toFixed(2)}/mi` : '—'}</td>
-                  <td>{r.profile_id ? <Pill kind="ok">Linked</Pill> : <Pill kind="muted">Not linked</Pill>}</td>
+                  {!isTechSupport && <td className="num">{r.hourly_rate ? `$${Number(r.hourly_rate).toFixed(2)}/h` : '—'}</td>}
+                  {!isTechSupport && <td className="num">{r.mileage_rate ? `$${Number(r.mileage_rate).toFixed(2)}/mi` : '—'}</td>}
+                  {!isTechSupport && <td>{r.profile_id ? <Pill kind="ok">Linked</Pill> : <Pill kind="muted">Not linked</Pill>}</td>}
                   <td>{r.is_active ? <Pill kind="ok">Active</Pill> : <Pill kind="muted">Inactive</Pill>}</td>
                 </tr>
               ))}
@@ -47,7 +58,9 @@ export default function Caregivers() {
         )}
       </div>
       {adding && <CaregiverModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />}
-      {selected && <CaregiverDetail caregiver={selected} onClose={() => { setSelected(null); load() }} />}
+      {selected && (isTechSupport
+        ? <TechSupportPreview title={fullName(selected)} row={selected} type="caregiver" onClose={() => setSelected(null)} />
+        : <CaregiverDetail caregiver={selected} onClose={() => { setSelected(null); load() }} />)}
     </>
   )
 }

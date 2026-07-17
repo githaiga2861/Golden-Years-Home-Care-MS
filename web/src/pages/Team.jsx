@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Empty, Pill } from '../components/Ui'
 
-const ROLES = ['admin', 'scheduler', 'coordinator', 'caregiver']
+const ROLES = ['admin', 'scheduler', 'coordinator', 'caregiver', 'tech_support']
 
 export default function Team() {
   const { profile } = useAuth()
@@ -52,7 +52,8 @@ export default function Team() {
       </div>
       <p className="muted mt" style={{ fontSize: '.85rem' }}>
         Roles: <b>Admin</b> — everything, including roles & settings. <b>Scheduler</b> — scheduling and registration.
-        <b> Coordinator</b> — care plans and visit review. <b>Caregiver</b> — Care App only (cannot open this system).
+        <b> Coordinator</b> — care plans and visit review. <b>Tech Support</b> — same access as admin except client/caregiver
+        sensitive details, which are never sent to their account. <b>Caregiver</b> — Care App only (cannot open this system).
       </p>
     </>
   )

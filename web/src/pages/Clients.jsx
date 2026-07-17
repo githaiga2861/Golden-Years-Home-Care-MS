@@ -2,19 +2,27 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fullName, fmtDate } from '../lib/format'
 import { geocodeAddress } from '../lib/geocode'
-import { Modal, Field, Empty, Pill, ProfileHeader } from '../components/Ui'
+import { Modal, Field, Empty, Pill, ProfileHeader, TechSupportPreview } from '../components/Ui'
+import { useAuth } from '../context/AuthContext'
 import EditableSelect from '../components/EditableSelect'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 
 export default function Clients() {
+  const { profile } = useAuth()
+  const isTechSupport = profile?.role === 'tech_support'
   const [rows, setRows] = useState([])
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState(null)
 
-  const load = () =>
-    supabase.from('clients').select('*, payer_types(label)').order('last_name').then(({ data }) => setRows(data || []))
-  useEffect(() => { load() }, [])
+  const load = () => {
+    if (isTechSupport) {
+      supabase.from('v_clients_directory').select('*').order('last_name').then(({ data }) => setRows(data || []))
+    } else {
+      supabase.from('clients').select('*, payer_types(label)').order('last_name').then(({ data }) => setRows(data || []))
+    }
+  }
+  useEffect(() => { load() }, [isTechSupport]) // eslint-disable-line
 
   const filtered = rows.filter((r) =>
     fullName(r).toLowerCase().includes(q.toLowerCase()) || (r.city || '').toLowerCase().includes(q.toLowerCase()))
@@ -23,8 +31,11 @@ export default function Clients() {
     <>
       <div className="page-head">
         <div><h1 className="thread">Clients</h1><div className="sub">Private-pay clients, their care plans, and physician documents.</div></div>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Register client</button>
+        {!isTechSupport && <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Register client</button>}
       </div>
+      {isTechSupport && (
+        <p className="notice notice-warn mb">Technical Support mode: sensitive client details (address, clinical, and billing info) are hidden and never sent to this account.</p>
+      )}
 
       <div className="toolbar mb">
         <input className="searchbox" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -33,14 +44,14 @@ export default function Clients() {
       <div className="card">
         {filtered.length === 0 ? <Empty title="No clients yet" hint="Register your first client to begin scheduling care." /> : (
           <table className="data">
-            <thead><tr><th>Client</th><th>Address</th><th>Payer</th><th className="num">Bill rate</th><th>Authorized hrs/wk</th><th>Status</th></tr></thead>
+            <thead><tr><th>Client</th><th>{isTechSupport ? 'Location' : 'Address'}</th>{!isTechSupport && <th>Payer</th>}{!isTechSupport && <th className="num">Bill rate</th>}<th>{isTechSupport ? 'Auth hrs/wk' : 'Authorized hrs/wk'}</th><th>Status</th></tr></thead>
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id} className="click" onClick={() => setSelected(r)}>
                   <td><b>{fullName(r)}</b></td>
-                  <td className="muted">{r.address}{r.city ? `, ${r.city}` : ''}</td>
-                  <td>{r.payer_types?.label ? <Pill kind="info">{r.payer_types.label}</Pill> : <Pill kind="muted">Not set</Pill>}</td>
-                  <td className="num">{r.bill_rate ? `$${Number(r.bill_rate).toFixed(2)}/h` : '—'}</td>
+                  <td className="muted">{isTechSupport ? <span className="blur-box">••••••••</span> : `${r.address}${r.city ? `, ${r.city}` : ''}`}</td>
+                  {!isTechSupport && <td>{r.payer_types?.label ? <Pill kind="info">{r.payer_types.label}</Pill> : <Pill kind="muted">Not set</Pill>}</td>}
+                  {!isTechSupport && <td className="num">{r.bill_rate ? `$${Number(r.bill_rate).toFixed(2)}/h` : '—'}</td>}
                   <td className="num">{r.authorized_hours_per_week ?? '—'}</td>
                   <td>{
                     { active: <Pill kind="ok">Active</Pill>, on_hold: <Pill kind="warn">On hold</Pill>,
@@ -55,7 +66,9 @@ export default function Clients() {
       </div>
 
       {adding && <ClientModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />}
-      {selected && <ClientDetail client={selected} onClose={() => { setSelected(null); load() }} />}
+      {selected && (isTechSupport
+        ? <TechSupportPreview title={fullName(selected)} row={selected} type="client" onClose={() => setSelected(null)} />
+        : <ClientDetail client={selected} onClose={() => { setSelected(null); load() }} />)}
     </>
   )
 }
