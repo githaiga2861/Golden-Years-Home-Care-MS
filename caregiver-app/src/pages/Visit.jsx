@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { getPosition, distanceM } from '../lib/geo'
 import { enqueue, syncQueue } from '../lib/offline'
+import SignaturePad, { getCanvasBlob } from '../components/SignaturePad'
 
 const fmtT = (d) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 const WarnIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-3px', marginRight: '.35rem' }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -34,6 +35,13 @@ export default function Visit() {
   const [busy, setBusy] = useState(false)
   const [gps, setGps] = useState(null)          // last known {lat,lng}
   const [locationReady, setLocationReady] = useState(null) // null=checking, true=ok, false=denied/unavailable
+  const [showSignoff, setShowSignoff] = useState(false)
+  const [clientSigName, setClientSigName] = useState('')
+  const [hasClientSig, setHasClientSig] = useState(false)
+  const [hasCaregiverSig, setHasCaregiverSig] = useState(false)
+  const clientSigRef = useRef(null)
+  const caregiverSigRef = useRef(null)
+  const [submitting, setSubmitting] = useState(false)
   const [mileage, setMileage] = useState('')
   const [mileageNotes, setMileageNotes] = useState('')
   const [mileageSaved, setMileageSaved] = useState(false)
@@ -104,6 +112,15 @@ export default function Visit() {
     getPosition().then((pos) => { setGps(pos); setLocationReady(!!pos) })
   }, [])
 
+  useEffect(() => {
+    // While actively on a visit, periodically re-pull the care plan/ADLs/
+    // medications/documents so anything the office adds mid-visit shows up
+    // without the caregiver needing to leave the screen or manually refresh.
+    if (!visit?.clock_in_at || visit?.clock_out_at) return
+    const t = setInterval(() => { load().catch(() => {}) }, 20000)
+    return () => clearInterval(t)
+  }, [visit?.id, visit?.clock_in_at, visit?.clock_out_at]) // eslint-disable-line
+
   // ---- derived state (works both online and offline) ----
   const ls = localState()
   const clockedIn = Boolean(visit?.clock_in_at || ls.clock_in_at)
@@ -167,14 +184,32 @@ export default function Visit() {
     setBusy(false)
   }
 
-  const clockOut = async () => {
-    if (!confirm('End this visit and clock out?')) return
-    setBusy(true)
+  const beginSignoff = () => {
+    const incomplete = displayTasks.filter((t) => !t.completed)
+    if (incomplete.length > 0) {
+      const list = incomplete.map((t) => `• ${t.label}`).join('\n')
+      const proceed = confirm(`These care tasks are still unchecked:\n\n${list}\n\nContinue to sign off anyway?`)
+      if (!proceed) return
+    }
+    setShowSignoff(true)
+  }
+
+  const submitSignoff = async () => {
+    if (!hasClientSig || !clientSigName.trim()) {
+      flash('bad', "Please get the client/family member's signature and enter their name.", 6000)
+      return
+    }
+    if (!hasCaregiverSig) {
+      flash('bad', 'Please sign in the caregiver signature box before submitting.', 6000)
+      return
+    }
+
+    setSubmitting(true)
     const pos = await getPosition()
     setGps(pos)
 
     if (!pos) {
-      setBusy(false)
+      setSubmitting(false)
       flash('bad', 'Location access is required to clock out. Please allow location access and try again.', 9000)
       return
     }
@@ -193,7 +228,7 @@ export default function Visit() {
         } else {
           enqueue({ type: 'geofence_block', message: alertMsg, shift_id: shift.id, client_id: client.id, caregiver_id: caregiver.id })
         }
-        setBusy(false)
+        setSubmitting(false)
         flash('bad', `You're about ${miles} mi from ${client.first_name}'s home — too far away to clock out. If you believe this is a mistake, please contact the office immediately.`, 12000)
         return
       }
@@ -205,16 +240,35 @@ export default function Visit() {
       const { error } = await supabase.rpc('clock_out', {
         p_visit_id: visit.id, p_lat: pos.lat, p_lng: pos.lng, p_at: at,
       })
-      if (error) {
+      if (!error) {
+        // Upload both signatures now that the visit has a confirmed server id.
+        try {
+          const [clientBlob, caregiverBlob] = await Promise.all([
+            getCanvasBlob(clientSigRef.current), getCanvasBlob(caregiverSigRef.current),
+          ])
+          const clientPath = `${visit.id}/client_${Date.now()}.png`
+          const caregiverPath = `${visit.id}/caregiver_${Date.now()}.png`
+          await Promise.all([
+            supabase.storage.from('visit-signatures').upload(clientPath, clientBlob),
+            supabase.storage.from('visit-signatures').upload(caregiverPath, caregiverBlob),
+          ])
+          await supabase.from('visits').update({
+            client_signature_path: clientPath, client_signature_name: clientSigName.trim(), client_signature_at: at,
+            caregiver_signature_path: caregiverPath, caregiver_signature_at: at,
+          }).eq('id', visit.id)
+        } catch { /* signatures are a bonus — never block clock-out on an upload hiccup */ }
+        await load()
+      } else {
         enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
         setLocal({ clock_out_at: at })
-      } else await load()
+      }
     } else {
       enqueue({ type: 'clock_out', shift_id: shiftId, lat: pos.lat, lng: pos.lng, at })
       setLocal({ clock_out_at: at })
-      flash('warn', "You're offline — clock-out saved and will upload automatically.", 6000)
+      flash('warn', "You're offline — clock-out saved and will upload automatically. Signatures could not be saved offline — please note this for the office.", 8000)
     }
-    setBusy(false)
+    setSubmitting(false)
+    setShowSignoff(false)
     syncQueue()
   }
 
@@ -363,13 +417,39 @@ export default function Visit() {
         {clockedIn && !clockedOut && (
           <>
             <p className="pill pill-gold" style={{ marginBottom: '.7rem' }}>Clocked in at {fmtT(clockInAt)}</p>
-            <button className="btn btn-clockout" onClick={clockOut} disabled={busy}>■ End visit (clock out)</button>
+            {!showSignoff && (
+              <button className="btn btn-clockout" onClick={beginSignoff} disabled={busy}>■ End visit (clock out)</button>
+            )}
           </>
         )}
         {clockedOut && (
           <p className="pill pill-ok">Visit complete · {fmtT(clockInAt)} – {fmtT(clockOutAt)}</p>
         )}
       </div>
+
+      {showSignoff && (
+        <div className="card" style={{ border: '2px solid var(--gold)' }}>
+          <h3>Sign off to complete the visit</h3>
+          <p className="muted" style={{ fontSize: '.86rem' }}>Both signatures are required. The date/time is recorded automatically.</p>
+
+          <div className="field">
+            <label>Client / family member responsible — name</label>
+            <input value={clientSigName} onChange={(e) => setClientSigName(e.target.value)} placeholder="Full name" />
+          </div>
+          <label style={{ fontSize: '.85rem', fontWeight: 600 }}>Client / family signature</label>
+          <SignaturePad ref={clientSigRef} onChange={setHasClientSig} />
+
+          <label style={{ fontSize: '.85rem', fontWeight: 600, marginTop: '.9rem', display: 'block' }}>Caregiver signature ({caregiver?.first_name} {caregiver?.last_name})</label>
+          <SignaturePad ref={caregiverSigRef} onChange={setHasCaregiverSig} />
+
+          <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+            <button className="btn btn-quiet" onClick={() => setShowSignoff(false)} disabled={submitting}>Back</button>
+            <button className="btn btn-clockout" style={{ flex: 1 }} onClick={submitSignoff} disabled={submitting}>
+              {submitting ? 'Submitting…' : '✓ Submit & clock out'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {plan && (
         <div className="card">
