@@ -6,6 +6,7 @@ import { getPosition, distanceM } from '../lib/geo'
 import { enqueue, syncQueue } from '../lib/offline'
 
 const fmtT = (d) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+const WarnIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-3px', marginRight: '.35rem' }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 
 /**
  * The heart of the Care App: one visit, start to finish.
@@ -203,9 +204,12 @@ export default function Visit() {
         {shift.notes && <p className="notice notice-warn" style={{ marginTop: '.7rem' }}>Office note: {shift.notes}</p>}
       </div>
 
-      {(allergies.length > 0 || mobility) && (
+      {(allergies.length > 0 || mobility || client.fall_risk || client.special_precautions?.length > 0) && (
         <div className="card" style={{ borderLeft: '4px solid var(--bad)' }}>
-          <h3 style={{ marginBottom: '.5rem' }}>⚠ Safety information</h3>
+          <h3 style={{ marginBottom: '.5rem' }}>{WarnIcon}Safety information</h3>
+          {client.fall_risk && (
+            <p style={{ margin: '0 0 .4rem' }}><span className="pill pill-bad">Fall risk</span></p>
+          )}
           {allergies.length > 0 && (
             <p style={{ margin: '0 0 .4rem' }}>
               <b>Allergies:</b>{' '}
@@ -213,7 +217,13 @@ export default function Visit() {
             </p>
           )}
           {mobility && (
-            <p style={{ margin: 0 }}><b>Mobility level:</b> <span className="pill pill-warn">{mobility}</span></p>
+            <p style={{ margin: '0 0 .4rem' }}><b>Mobility level:</b> <span className="pill pill-warn">{mobility}</span></p>
+          )}
+          {client.special_precautions?.length > 0 && (
+            <p style={{ margin: 0 }}>
+              <b>Special precautions:</b>{' '}
+              {client.special_precautions.map((p) => <span key={p} className="pill pill-bad" style={{ marginRight: '.3rem' }}>{p}</span>)}
+            </p>
           )}
         </div>
       )}
@@ -265,7 +275,7 @@ export default function Visit() {
           <h3>Medications</h3>
           {medications.map((m) => (
             <div key={m.id} style={{ padding: '.5rem 0', borderBottom: '1px solid var(--line)' }}>
-              <b>{m.name}</b> — {m.dosage}
+              <b>{m.name}</b> — {m.dosage}{m.route && <span className="muted"> · {m.route}</span>}
               {m.schedule_times?.length > 0 && (
                 <div className="muted" style={{ fontSize: '.84rem' }}>Times: {m.schedule_times.join(', ')}</div>
               )}

@@ -42,7 +42,11 @@ export default function Clients() {
                   <td>{r.payer_types?.label ? <Pill kind="info">{r.payer_types.label}</Pill> : <Pill kind="muted">Not set</Pill>}</td>
                   <td className="num">{r.bill_rate ? `$${Number(r.bill_rate).toFixed(2)}/h` : '—'}</td>
                   <td className="num">{r.authorized_hours_per_week ?? '—'}</td>
-                  <td>{r.is_active ? <Pill kind="ok">Active</Pill> : <Pill kind="muted">Inactive</Pill>}</td>
+                  <td>{
+                    { active: <Pill kind="ok">Active</Pill>, on_hold: <Pill kind="warn">On hold</Pill>,
+                      hospitalized: <Pill kind="bad">Hospitalized</Pill>, discharged: <Pill kind="muted">Discharged</Pill>
+                    }[r.status] || (r.is_active ? <Pill kind="ok">Active</Pill> : <Pill kind="muted">Inactive</Pill>)
+                  }</td>
                 </tr>
               ))}
             </tbody>
@@ -74,7 +78,18 @@ function ClientModal({ client, onClose, onSaved }) {
     bill_rate: '', billing_cycle: 'weekly', billing_email: '', service_notes: '',
     payer_type_id: null, mobility_level_id: null, cognitive_status_id: null,
     authorized_hours_per_week: '', is_active: true,
+    status: 'active', date_of_birth: '', gender: '', preferred_language: '',
+    fall_risk: false, special_precautions: [],
+    case_manager_name: '', case_manager_phone: '', rn_name: '', rn_phone: '',
+    responsible_party_name: '', responsible_party_phone: '', responsible_party_relationship: '',
+    authorization_start: '', authorization_end: '',
   })
+  const [secondaryContacts, setSecondaryContacts] = useState([])
+  const [newContact, setNewContact] = useState({ name: '', phone: '', relationship: '', notes: '' })
+  const [precautionIds, setPrecautionIds] = useState([])
+  const [langId, setLangId] = useState(null)
+  const [langOptions, setLangOptions] = useState([])
+  const [precautionOptions, setPrecautionOptions] = useState([])
   const [diagnosisIds, setDiagnosisIds] = useState([])
   const [allergyIds, setAllergyIds] = useState([])
   const [caregiverIds, setCaregiverIds] = useState([])
@@ -91,7 +106,7 @@ function ClientModal({ client, onClose, onSaved }) {
   const [physiciansList, setPhysiciansList] = useState([])
   const [newPhysician, setNewPhysician] = useState({ name: '', phone: '', fax: '', agency_name: '', notes: '' })
   const [medicationsList, setMedicationsList] = useState([])
-  const [newMedication, setNewMedication] = useState({ name: '', dosage: '', times: '', instructions: '' })
+  const [newMedication, setNewMedication] = useState({ name: '', dosage: '', route: '', times: '', instructions: '' })
   const [carePlanFiles, setCarePlanFiles] = useState([])
   const [dragOver, setDragOver] = useState(false)
   const [auth, setAuth] = useState({
@@ -107,6 +122,19 @@ function ClientModal({ client, onClose, onSaved }) {
   useEffect(() => {
     supabase.from('caregivers').select('id,first_name,last_name').eq('is_active', true).order('last_name')
       .then(({ data }) => setAllCaregivers(data || []))
+    supabase.from('languages_list').select('id,label').order('label').then(({ data }) => {
+      setLangOptions(data || [])
+      if (!isNew && client.preferred_language) {
+        const match = (data || []).find((o) => o.label === client.preferred_language)
+        if (match) setLangId(match.id)
+      }
+    })
+    supabase.from('precautions_list').select('id,label').order('label').then(({ data }) => {
+      setPrecautionOptions(data || [])
+      if (!isNew && client.special_precautions?.length) {
+        setPrecautionIds((data || []).filter((o) => client.special_precautions.includes(o.label)).map((o) => o.id))
+      }
+    })
     if (!isNew) {
       supabase.from('client_diagnoses').select('diagnosis_id').eq('client_id', client.id)
         .then(({ data }) => setDiagnosisIds((data || []).map((r) => r.diagnosis_id)))
@@ -114,6 +142,9 @@ function ClientModal({ client, onClose, onSaved }) {
         .then(({ data }) => setAllergyIds((data || []).map((r) => r.allergy_id)))
       supabase.from('client_caregivers').select('caregiver_id').eq('client_id', client.id)
         .then(({ data }) => setCaregiverIds((data || []).map((r) => r.caregiver_id)))
+      supabase.from('client_contacts').select('*').eq('client_id', client.id)
+        .then(({ data }) => setSecondaryContacts((data || []).map((c) => ({ ...c, _id: c.id }))))
+      if (client.special_precautions) setF((prev) => ({ ...prev, special_precautions: client.special_precautions }))
     }
   }, [client?.id]) // eslint-disable-line
 
@@ -150,7 +181,7 @@ function ClientModal({ client, onClose, onSaved }) {
   const addMedication = () => {
     if (!newMedication.name.trim() || !newMedication.dosage.trim()) return
     setMedicationsList((m) => [...m, { ...newMedication, _id: Date.now() }])
-    setNewMedication({ name: '', dosage: '', times: '', instructions: '' })
+    setNewMedication({ name: '', dosage: '', route: '', times: '', instructions: '' })
   }
   const removeMedication = (id) => setMedicationsList((m) => m.filter((x) => x._id !== id))
 
@@ -228,8 +259,16 @@ function ClientModal({ client, onClose, onSaved }) {
         payer_type_id: f.payer_type_id || null,
         mobility_level_id: f.mobility_level_id || null,
         cognitive_status_id: f.cognitive_status_id || null,
+        date_of_birth: f.date_of_birth || null,
+        authorization_start: f.authorization_start || null,
+        authorization_end: f.authorization_end || null,
+        preferred_language: langId ? (langOptions.find((o) => o.id === langId)?.label || null) : null,
+        special_precautions: precautionIds.length
+          ? precautionOptions.filter((o) => precautionIds.includes(o.id)).map((o) => o.label)
+          : null,
       }
       delete row.id; delete row.created_at; delete row.payer_types
+      delete row.mobility_levels; delete row.cognitive_statuses
 
       const q = isNew ? supabase.from('clients').insert(row).select().single()
                       : supabase.from('clients').update(row).eq('id', client.id).select().single()
@@ -243,6 +282,14 @@ function ClientModal({ client, onClose, onSaved }) {
       if (allergyIds.length) await supabase.from('client_allergies').insert(allergyIds.map((a) => ({ client_id: cid, allergy_id: a })))
       await supabase.from('client_caregivers').delete().eq('client_id', cid)
       if (caregiverIds.length) await supabase.from('client_caregivers').insert(caregiverIds.map((c) => ({ client_id: cid, caregiver_id: c })))
+
+      // Secondary contacts: replace all for this client
+      await supabase.from('client_contacts').delete().eq('client_id', cid)
+      if (secondaryContacts.length) {
+        await supabase.from('client_contacts').insert(secondaryContacts.map((c) => ({
+          client_id: cid, name: c.name, phone: c.phone, relationship: c.relationship, notes: c.notes,
+        })))
+      }
 
       // Detailed authorized-hours schedule (upsert one row per client)
       await supabase.from('client_authorization').upsert({
@@ -277,7 +324,7 @@ function ClientModal({ client, onClose, onSaved }) {
         if (medicationsList.length) {
           await supabase.from('medications').insert(medicationsList.map((m) => ({
             client_id: cid, name: m.name, dosage: m.dosage, instructions: m.instructions,
-            schedule_times: m.times.split(',').map((t) => t.trim()).filter(Boolean),
+            schedule_times: m.times.split(',').map((t) => t.trim()).filter(Boolean), route: m.route,
           })))
         }
         if (carePlanFiles.length) {
@@ -373,6 +420,56 @@ function ClientModal({ client, onClose, onSaved }) {
             </Field>
           </div>
           <Field label="Additional notes"><textarea rows={2} value={f.service_notes || ''} onChange={set('service_notes')} /></Field>
+
+          <h3 className="thread mt">Demographics & status</h3>
+          <div className="form-row-3">
+            <Field label="Date of birth"><input type="date" value={f.date_of_birth || ''} onChange={set('date_of_birth')} /></Field>
+            <Field label="Gender">
+              <select value={f.gender || ''} onChange={set('gender')}>
+                <option value="">Select…</option>
+                <option>Female</option><option>Male</option><option>Non-binary</option><option>Prefer not to say</option>
+              </select>
+            </Field>
+            <Field label="Client status">
+              <select value={f.status} onChange={set('status')}>
+                <option value="active">Active</option>
+                <option value="on_hold">On hold</option>
+                <option value="hospitalized">Hospitalized</option>
+                <option value="discharged">Discharged</option>
+              </select>
+            </Field>
+          </div>
+          <EditableSelect table="languages_list" label="Preferred language"
+            value={langId} onChange={setLangId} placeholder="Select language…" />
+
+          <h3 className="thread mt">Responsible party</h3>
+          <div className="form-row-3">
+            <Field label="Name"><input value={f.responsible_party_name || ''} onChange={set('responsible_party_name')} /></Field>
+            <Field label="Phone"><input value={f.responsible_party_phone || ''} onChange={set('responsible_party_phone')} /></Field>
+            <Field label="Relationship"><input value={f.responsible_party_relationship || ''} onChange={set('responsible_party_relationship')} /></Field>
+          </div>
+
+          <h3 className="thread mt">Additional emergency contacts</h3>
+          {secondaryContacts.length === 0 && <p className="muted">Primary emergency contact is set above. Add any others here.</p>}
+          {secondaryContacts.map((c) => (
+            <div key={c._id} className="shift-line" style={{ padding: '.4rem 0' }}>
+              <div style={{ flex: 1 }}>
+                <b>{c.name}</b>{c.relationship && <span className="muted"> · {c.relationship}</span>}
+                <div className="muted" style={{ fontSize: '.82rem' }}>{c.phone}</div>
+              </div>
+              <button className="btn btn-quiet" onClick={() => setSecondaryContacts((cs) => cs.filter((x) => x._id !== c._id))}>✕</button>
+            </div>
+          ))}
+          <div className="form-row-3">
+            <Field label="Name"><input value={newContact.name} onChange={(e) => setNewContact({ ...newContact, name: e.target.value })} /></Field>
+            <Field label="Phone"><input value={newContact.phone} onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })} /></Field>
+            <Field label="Relationship"><input value={newContact.relationship} onChange={(e) => setNewContact({ ...newContact, relationship: e.target.value })} /></Field>
+          </div>
+          <button type="button" className="btn btn-outline mb" onClick={() => {
+            if (!newContact.name.trim()) return
+            setSecondaryContacts((cs) => [...cs, { ...newContact, _id: Date.now() }])
+            setNewContact({ name: '', phone: '', relationship: '', notes: '' })
+          }}>+ Add contact</button>
         </>
       )}
 
@@ -386,6 +483,23 @@ function ClientModal({ client, onClose, onSaved }) {
             onChange={(v) => setF({ ...f, cognitive_status_id: v })} placeholder="Select cognitive status…" />
           <EditableSelect table="diagnoses_list" label="Diagnoses" value={diagnosisIds} onChange={setDiagnosisIds} multi />
           <EditableSelect table="allergies_list" label="Allergies" value={allergyIds} onChange={setAllergyIds} multi />
+          <EditableSelect table="precautions_list" label="Special precautions" value={precautionIds} onChange={setPrecautionIds} multi />
+          <div className="field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={f.fall_risk} onChange={(e) => setF({ ...f, fall_risk: e.target.checked })} />
+              <span><b>Fall risk</b> — flag this client as a fall risk (shown prominently to caregivers)</span>
+            </label>
+          </div>
+
+          <h3 className="thread mt">Case manager & RN</h3>
+          <div className="form-row">
+            <Field label="Case manager name"><input value={f.case_manager_name || ''} onChange={set('case_manager_name')} /></Field>
+            <Field label="Case manager phone"><input value={f.case_manager_phone || ''} onChange={set('case_manager_phone')} /></Field>
+          </div>
+          <div className="form-row">
+            <Field label="RN name"><input value={f.rn_name || ''} onChange={set('rn_name')} /></Field>
+            <Field label="RN phone"><input value={f.rn_phone || ''} onChange={set('rn_phone')} /></Field>
+          </div>
 
           {isNew ? (
             <>
@@ -458,7 +572,15 @@ function ClientModal({ client, onClose, onSaved }) {
                 <Field label="Medication name"><input value={newMedication.name} onChange={(e) => setNewMedication({ ...newMedication, name: e.target.value })} /></Field>
                 <Field label="Dosage"><input value={newMedication.dosage} onChange={(e) => setNewMedication({ ...newMedication, dosage: e.target.value })} placeholder="e.g. 10mg" /></Field>
               </div>
-              <Field label="Reminder times" help="Comma-separated, e.g. 09:00, 17:00"><input value={newMedication.times} onChange={(e) => setNewMedication({ ...newMedication, times: e.target.value })} /></Field>
+              <div className="form-row">
+                <Field label="Route">
+                  <select value={newMedication.route} onChange={(e) => setNewMedication({ ...newMedication, route: e.target.value })}>
+                    <option value="">Select…</option>
+                    {['Oral', 'Topical', 'Injection', 'Inhaled', 'Sublingual', 'Rectal', 'Other'].map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                </Field>
+                <Field label="Reminder times" help="Comma-separated, e.g. 09:00, 17:00"><input value={newMedication.times} onChange={(e) => setNewMedication({ ...newMedication, times: e.target.value })} /></Field>
+              </div>
               <button type="button" className="btn btn-outline mb" onClick={addMedication}>+ Add medication</button>
 
               <h3 className="thread mt">Care plan files</h3>
@@ -528,6 +650,10 @@ function ClientModal({ client, onClose, onSaved }) {
           <Field label="Authorization ends (optional)" help="Leave blank if ongoing.">
             <input type="date" value={auth.effective_until} onChange={(e) => setAuth({ ...auth, effective_until: e.target.value })} />
           </Field>
+          <div className="form-row">
+            <Field label="Authorization start date"><input type="date" value={f.authorization_start || ''} onChange={set('authorization_start')} /></Field>
+            <Field label="Authorization end date"><input type="date" value={f.authorization_end || ''} onChange={set('authorization_end')} /></Field>
+          </div>
           <p className="muted" style={{ fontSize: '.82rem' }}>Scheduling will warn if a shift falls outside this authorized pattern.</p>
 
           <div className="field mt">
@@ -596,31 +722,55 @@ function ClientDetail({ client, onClose }) {
 }
 
 function ClinicalTab({ clientId }) {
-  const [payer, setPayer] = useState(null)
-  const [mobility, setMobility] = useState(null)
-  const [cognitive, setCognitive] = useState(null)
+  const [client, setClient] = useState(null)
   const [diagnoses, setDiagnoses] = useState([])
   const [allergies, setAllergies] = useState([])
+  const [contacts, setContacts] = useState([])
 
   useEffect(() => {
     supabase.from('clients').select('*, payer_types(label), mobility_levels(label), cognitive_statuses(label)')
-      .eq('id', clientId).single().then(({ data }) => {
-        setPayer(data?.payer_types?.label); setMobility(data?.mobility_levels?.label); setCognitive(data?.cognitive_statuses?.label)
-      })
+      .eq('id', clientId).single().then(({ data }) => setClient(data))
     supabase.from('client_diagnoses').select('diagnoses_list(label)').eq('client_id', clientId)
       .then(({ data }) => setDiagnoses((data || []).map((r) => r.diagnoses_list?.label).filter(Boolean)))
     supabase.from('client_allergies').select('allergies_list(label)').eq('client_id', clientId)
       .then(({ data }) => setAllergies((data || []).map((r) => r.allergies_list?.label).filter(Boolean)))
+    supabase.from('client_contacts').select('*').eq('client_id', clientId)
+      .then(({ data }) => setContacts(data || []))
   }, [clientId])
+
+  if (!client) return <p className="muted">Loading…</p>
+  const STATUS_LABEL = { active: 'Active', on_hold: 'On hold', hospitalized: 'Hospitalized', discharged: 'Discharged' }
 
   return (
     <>
-      <p><b>Payer type:</b> {payer || 'Not set'}</p>
-      <p><b>Mobility level:</b> {mobility || 'Not set'}</p>
-      <p><b>Cognitive status:</b> {cognitive || 'Not set'}</p>
+      {client.fall_risk && <p className="notice notice-bad">⚠ Fall risk</p>}
+      <p><b>Status:</b> {STATUS_LABEL[client.status] || 'Active'}</p>
+      <p><b>Date of birth:</b> {client.date_of_birth || 'Not set'} · <b>Gender:</b> {client.gender || 'Not set'}</p>
+      <p><b>Preferred language:</b> {client.preferred_language || 'Not set'}</p>
+      <p><b>Payer type:</b> {client.payer_types?.label || 'Not set'}</p>
+      <p><b>Mobility level:</b> {client.mobility_levels?.label || 'Not set'}</p>
+      <p><b>Cognitive status:</b> {client.cognitive_statuses?.label || 'Not set'}</p>
       <p><b>Diagnoses:</b> {diagnoses.length ? diagnoses.join(', ') : 'None recorded'}</p>
       <p><b>Allergies:</b> {allergies.length ? allergies.join(', ') : 'None recorded'}</p>
-      <p className="muted" style={{ fontSize: '.85rem' }}>To change any of these, use "Edit details" on the Details tab.</p>
+      <p><b>Special precautions:</b> {client.special_precautions?.length ? client.special_precautions.join(', ') : 'None recorded'}</p>
+
+      <h3 className="thread mt">Case manager & RN</h3>
+      <p><b>Case manager:</b> {client.case_manager_name || 'Not set'} {client.case_manager_phone}</p>
+      <p><b>RN:</b> {client.rn_name || 'Not set'} {client.rn_phone}</p>
+
+      <h3 className="thread mt">Responsible party</h3>
+      <p>{client.responsible_party_name || 'Not set'} {client.responsible_party_relationship && `(${client.responsible_party_relationship})`} {client.responsible_party_phone}</p>
+
+      <h3 className="thread mt">Additional emergency contacts</h3>
+      {contacts.length === 0 && <p className="muted">None recorded.</p>}
+      {contacts.map((c) => (
+        <p key={c.id}>{c.name} {c.relationship && `(${c.relationship})`} — {c.phone}</p>
+      ))}
+
+      <h3 className="thread mt">Authorization period</h3>
+      <p>{client.authorization_start || 'Not set'} → {client.authorization_end || 'Ongoing'}</p>
+
+      <p className="muted mt" style={{ fontSize: '.85rem' }}>To change any of these, use "Edit details" on the Details tab.</p>
     </>
   )
 }
@@ -675,7 +825,7 @@ function PhysiciansTab({ clientId }) {
 
 function MedicationsTab({ clientId }) {
   const [list, setList] = useState([])
-  const [f, setF] = useState({ name: '', dosage: '', times: '', instructions: '' })
+  const [f, setF] = useState({ name: '', dosage: '', route: '', times: '', instructions: '' })
   const [err, setErr] = useState('')
 
   const load = () => supabase.from('medications').select('*').eq('client_id', clientId).eq('is_active', true).order('created_at').then(({ data }) => setList(data || []))
@@ -686,10 +836,10 @@ function MedicationsTab({ clientId }) {
     if (!f.name.trim() || !f.dosage.trim()) return setErr('Name and dosage are required.')
     const times = f.times.split(',').map((t) => t.trim()).filter(Boolean)
     const { error } = await supabase.from('medications').insert({
-      client_id: clientId, name: f.name, dosage: f.dosage, schedule_times: times, instructions: f.instructions,
+      client_id: clientId, name: f.name, dosage: f.dosage, route: f.route || null, schedule_times: times, instructions: f.instructions,
     })
     if (error) return setErr(error.message)
-    setF({ name: '', dosage: '', times: '', instructions: '' })
+    setF({ name: '', dosage: '', route: '', times: '', instructions: '' })
     load()
   }
   const remove = async (id) => { await supabase.from('medications').update({ is_active: false }).eq('id', id); load() }
@@ -699,7 +849,7 @@ function MedicationsTab({ clientId }) {
       {list.map((m) => (
         <div key={m.id} className="card card-pad mb" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <div>
-            <b>{m.name}</b> — {m.dosage}
+            <b>{m.name}</b> — {m.dosage}{m.route && <span className="muted"> · {m.route}</span>}
             <div className="muted" style={{ fontSize: '.85rem' }}>
               {m.schedule_times?.length ? `Times: ${m.schedule_times.join(', ')}` : 'No scheduled times'}
             </div>
@@ -715,9 +865,17 @@ function MedicationsTab({ clientId }) {
         <Field label="Medication name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Dosage"><input value={f.dosage} onChange={(e) => setF({ ...f, dosage: e.target.value })} placeholder="e.g. 10mg" /></Field>
       </div>
-      <Field label="Reminder times" help="Comma-separated, 24-hour format, e.g. 09:00, 17:00">
-        <input value={f.times} onChange={(e) => setF({ ...f, times: e.target.value })} placeholder="09:00, 17:00" />
-      </Field>
+      <div className="form-row">
+        <Field label="Route">
+          <select value={f.route} onChange={(e) => setF({ ...f, route: e.target.value })}>
+            <option value="">Select…</option>
+            {['Oral', 'Topical', 'Injection', 'Inhaled', 'Sublingual', 'Rectal', 'Other'].map((r) => <option key={r}>{r}</option>)}
+          </select>
+        </Field>
+        <Field label="Reminder times" help="Comma-separated, 24-hour format, e.g. 09:00, 17:00">
+          <input value={f.times} onChange={(e) => setF({ ...f, times: e.target.value })} placeholder="09:00, 17:00" />
+        </Field>
+      </div>
       <Field label="Instructions"><input value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} /></Field>
       <button className="btn btn-primary" onClick={add}>Add medication</button>
       <p className="muted mt" style={{ fontSize: '.84rem' }}>Caregivers see medication reminders as a checklist during the visit.</p>
