@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useUnread } from '../context/UnreadContext'
+import { useUpdate } from '../context/UpdateContext'
 
 const fmtWhen = (d) => {
   const diffMin = Math.round((Date.now() - new Date(d)) / 60000)
@@ -18,6 +19,7 @@ const TYPE_LABEL = {
 export default function Notifications() {
   const { caregiver } = useAuth()
   const { recheckUpdates } = useUnread()
+  const { available: updateAvailable, apkUrl } = useUpdate()
   const [items, setItems] = useState([])
 
   const load = async () => {
@@ -85,6 +87,16 @@ export default function Notifications() {
         )}
       </div>
       <p className="muted" style={{ marginTop: 0 }}>Care plan changes and schedule updates.</p>
+
+      {updateAvailable && (
+        <div className="card" style={{ background: 'var(--paper)', border: '1.5px solid var(--gold)', marginBottom: '.8rem' }}>
+          <p style={{ margin: '0 0 .5rem', fontWeight: 700 }}>A new app update is available</p>
+          <p className="muted" style={{ fontSize: '.86rem', margin: '0 0 .7rem' }}>
+            Installing it updates the app in place — your login and saved data stay exactly as they are.
+          </p>
+          <a className="btn btn-primary" href={apkUrl} download>Download update</a>
+        </div>
+      )}
 
       {items.length === 0 && (
         <div className="empty"><h3>No updates yet</h3><p>You'll see it here when the office changes something for you or your clients.</p></div>

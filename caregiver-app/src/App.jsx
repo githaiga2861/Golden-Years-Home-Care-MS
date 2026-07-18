@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { RefreshProvider, useRefresh } from './context/RefreshContext'
 import { UnreadProvider, useUnread } from './context/UnreadContext'
+import { UpdateProvider, useUpdate } from './context/UpdateContext'
 import { startSyncLoop, syncQueue, pendingCount } from './lib/offline'
 import logo from './assets/logo.png'
 import Login from './pages/Login'
@@ -22,6 +23,7 @@ const SyncIcon = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" str
 
 function SyncButton() {
   const { tick, refresh } = useRefresh()
+  const { available: updateAvailable, recheck: recheckUpdate } = useUpdate()
   const [pending, setPending] = useState(pendingCount())
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState('')
@@ -39,6 +41,7 @@ function SyncButton() {
       const before = pendingCount()
       await syncQueue(setPending)
       const after = pendingCount()
+      await recheckUpdate()
       setFlash(before > after ? `Synced ${before - after} item${before - after === 1 ? '' : 's'}` : 'Up to date')
     } else {
       setFlash("You're offline")
@@ -70,6 +73,12 @@ function SyncButton() {
             display: 'grid', placeItems: 'center', fontSize: '.62rem', fontWeight: 700, lineHeight: 1,
             background: 'var(--gold)', color: 'var(--blue-ink)', borderRadius: '50%', border: '1.5px solid var(--blue-ink)',
           }}>{pending}</span>
+        )}
+        {pending === 0 && updateAvailable && (
+          <span style={{
+            position: 'absolute', top: -3, right: -3, width: 12, height: 12,
+            background: '#e8b13b', borderRadius: '50%', border: '1.5px solid var(--blue-ink)',
+          }} title="Update available" />
         )}
       </button>
     </div>
@@ -128,6 +137,7 @@ export default function App() {
   return (
     <AuthProvider>
       <UnreadProvider>
+      <UpdateProvider>
       <RefreshProvider>
         <BrowserRouter>
           <Routes>
@@ -143,6 +153,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </RefreshProvider>
+      </UpdateProvider>
       </UnreadProvider>
     </AuthProvider>
   )
