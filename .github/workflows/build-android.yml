@@ -46,6 +46,13 @@ jobs:
         working-directory: caregiver-app
         run: npx cap sync android
 
+      - name: Bump Android versionCode so every build is a real update
+        working-directory: caregiver-app/android/app
+        run: |
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" build.gradle
+          grep -n "versionCode\|versionName" build.gradle
+
       - name: Decode signing keystore
         working-directory: caregiver-app/android/app
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
