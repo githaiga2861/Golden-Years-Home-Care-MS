@@ -5,6 +5,7 @@ import { Modal, Field, Empty, Pill, ProfileHeader, TechSupportPreview } from '..
 import { useAuth } from '../context/AuthContext'
 import EditableSelect from '../components/EditableSelect'
 import { createCaregiverAccount } from '../lib/createCaregiverAccount'
+import { updateCaregiverAccount } from '../lib/updateCaregiverAccount'
 
 export default function Caregivers() {
   const { profile } = useAuth()
@@ -453,6 +454,25 @@ function CaregiverModal({ caregiver, onClose, onSaved }) {
 function CaregiverDetail({ caregiver, onClose }) {
   const [tab, setTab] = useState('availability')
   const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteErr, setDeleteErr] = useState('')
+
+  const deleteCaregiver = async () => {
+    if (!confirm(`Permanently delete ${fullName(caregiver)}? This cannot be undone.`)) return
+    setDeleting(true)
+    setDeleteErr('')
+    const { error } = await supabase.from('caregivers').delete().eq('id', caregiver.id)
+    setDeleting(false)
+    if (error) {
+      setDeleteErr(
+        error.code === '23503'
+          ? 'This caregiver has existing visits, shifts, or other history and can\'t be deleted. Mark them Inactive instead.'
+          : error.message
+      )
+    } else {
+      onClose()
+    }
+  }
   const tabs = ['availability', 'timeoff', 'credentials', 'account', 'details']
   const labels = { availability: 'Availability', timeoff: 'Time off', credentials: 'Credentials', account: 'App account', details: 'Details' }
   const initials = `${caregiver.first_name?.[0] || ''}${caregiver.last_name?.[0] || ''}`.toUpperCase()
@@ -500,6 +520,12 @@ function CaregiverDetail({ caregiver, onClose }) {
               {editing
                 ? <CaregiverModal caregiver={caregiver} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
                 : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
+
+              <h3 className="thread mt" style={{ color: 'var(--bad)' }}>Danger zone</h3>
+              {deleteErr && <p className="notice notice-bad">{deleteErr}</p>}
+              <button className="btn btn-outline" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={deleteCaregiver} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete caregiver permanently'}
+              </button>
             </>
           )}
         </div>
@@ -681,13 +707,15 @@ function AccountLink({ caregiver, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState(caregiver.email || '')
   const [password, setPassword] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
   useEffect(() => {
     if (!caregiver.profile_id) { setLoading(false); return }
     supabase.from('profiles').select('email').eq('id', caregiver.profile_id).maybeSingle()
-      .then(({ data }) => { setLinkedEmail(data?.email || ''); setLoading(false) })
+      .then(({ data }) => { setLinkedEmail(data?.email || ''); setEditEmail(data?.email || ''); setLoading(false) })
   }, [caregiver.profile_id])
 
   const create = async () => {
@@ -705,6 +733,26 @@ function AccountLink({ caregiver, onSaved }) {
     onSaved?.()
   }
 
+  const saveChanges = async () => {
+    setMsg(null)
+    const emailChanged = editEmail.trim() && editEmail.trim() !== linkedEmail
+    const passwordChanged = editPassword.trim().length > 0
+    if (!emailChanged && !passwordChanged) return setMsg({ kind: 'bad', text: 'Change the email or password before saving.' })
+    if (passwordChanged && editPassword.length < 8) return setMsg({ kind: 'bad', text: 'Password must be at least 8 characters.' })
+    setBusy(true)
+    const result = await updateCaregiverAccount({
+      caregiverId: caregiver.id,
+      newEmail: emailChanged ? editEmail.trim() : undefined,
+      newPassword: passwordChanged ? editPassword : undefined,
+    })
+    setBusy(false)
+    if (!result.ok) return setMsg({ kind: 'bad', text: result.error })
+    setMsg({ kind: 'ok', text: 'Login updated.' })
+    if (emailChanged) setLinkedEmail(editEmail.trim())
+    setEditPassword('')
+    onSaved?.()
+  }
+
   const unlink = async () => {
     if (!confirm('Unlink this login? The caregiver will no longer be able to sign in until relinked.')) return
     await supabase.from('caregivers').update({ profile_id: null }).eq('id', caregiver.id)
@@ -718,7 +766,15 @@ function AccountLink({ caregiver, onSaved }) {
     return (
       <>
         <p className="notice notice-ok">Linked to <b>{linkedEmail}</b>. They can sign in to the Care App with this email.</p>
-        <button className="btn btn-outline" onClick={unlink}>Unlink login</button>
+        {msg && <p className={`notice ${msg.kind === 'ok' ? 'notice-ok' : 'notice-bad'}`}>{msg.text}</p>}
+        <div className="form-row">
+          <Field label="Login email"><input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} /></Field>
+          <Field label="New password" help="Leave blank to keep the current password."><input type="text" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} /></Field>
+        </div>
+        <div style={{ display: 'flex', gap: '.5rem' }}>
+          <button className="btn btn-primary" onClick={saveChanges} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+          <button className="btn btn-outline" onClick={unlink}>Unlink login</button>
+        </div>
       </>
     )
   }

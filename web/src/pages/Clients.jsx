@@ -698,6 +698,25 @@ function ClientModal({ client, onClose, onSaved }) {
 function ClientDetail({ client, onClose }) {
   const [tab, setTab] = useState('plan')
   const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteErr, setDeleteErr] = useState('')
+
+  const deleteClient = async () => {
+    if (!confirm(`Permanently delete ${fullName(client)}? This cannot be undone.`)) return
+    setDeleting(true)
+    setDeleteErr('')
+    const { error } = await supabase.from('clients').delete().eq('id', client.id)
+    setDeleting(false)
+    if (error) {
+      setDeleteErr(
+        error.code === '23503'
+          ? 'This client has existing visits, invoices, or other history and can\'t be deleted. Mark them Inactive or Discharged instead.'
+          : error.message
+      )
+    } else {
+      onClose()
+    }
+  }
 
   const tabs = ['plan', 'clinical', 'physicians', 'medications', 'documents', 'operational', 'details']
   const labels = { plan: 'Care plan', clinical: 'Clinical', physicians: 'Physicians', medications: 'Medications', documents: 'Documents', operational: 'Operational', details: 'Details' }
@@ -743,6 +762,12 @@ function ClientDetail({ client, onClose }) {
               {editing
                 ? <ClientModal client={client} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onClose() }} />
                 : <button className="btn btn-outline" onClick={() => setEditing(true)}>Edit details</button>}
+
+              <h3 className="thread mt" style={{ color: 'var(--bad)' }}>Danger zone</h3>
+              {deleteErr && <p className="notice notice-bad">{deleteErr}</p>}
+              <button className="btn btn-outline" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={deleteClient} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete client permanently'}
+              </button>
             </>
           )}
         </div>
